@@ -85,11 +85,16 @@ async function codici() {
   ${i.used_at ? `<div class="mut">Codice già usato</div>` : `<div>Codice: <b style="font-family:monospace;letter-spacing:1px">${esc(i.code_plain)}</b></div><div class="mut">Scade il ${day(i.expires_at)}</div>`}</div>`).join("")}`);
 }
 
-$("#go").onclick = login; $("#code").onkeydown = (e) => e.key === "Enter" && login();
+
+$("#go").onclick = login;
+$("#code").onkeydown = (e) => e.key === "Enter" && login();
 $("#code").oninput = (e) => {
   const v = e.target.value.replace(/[^a-z0-9]/gi, "").toUpperCase().slice(0, 12);
   e.target.value = v.match(/.{1,4}/g)?.join("-") || "";
 };
-v.slice(0, 4) + "-" + v.slice(4) : v; };
-$("#out").onclick = async () => { await sb.auth.signOut(); me = null; boot(); };
+$("#out").onclick = async () => {
+  await sb.auth.signOut();
+  me = null;
+  boot();
+};
 boot();
