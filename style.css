@@ -1,0 +1,20 @@
+:root{--bg:#f2f6fb;--card:#fff;--ink:#14202e;--mut:#566679;--g:#2966a0;--line:#d9e1ea;--m:#cfe0f3;--r:#d2352c}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1621;--card:#162130;--ink:#eaf1f8;--mut:#9db0c4;--g:#5b9bd5;--line:#27374b;--m:#1d3a57}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif;padding-bottom:70px}
+header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--card);border-bottom:3px solid var(--g)}
+.logo{height:38px;background:#fff;border-radius:8px;padding:3px 8px}header h1{margin:0;font-size:20px;color:var(--g);flex:1}
+main{max-width:860px;margin:0 auto;padding:14px}h2{margin:6px 0 10px}
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+.mut{color:var(--mut);font-size:13px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input,select{width:100%;padding:9px 10px;border:1.5px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;margin-top:4px}
+button{background:var(--g);color:#fff;border:0;border-radius:8px;padding:10px 14px;font:inherit;font-weight:600;cursor:pointer}
+button.alt{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;overflow-x:auto;background:var(--card);border-top:1.5px solid var(--line)}
+nav button{flex:1;min-width:76px;background:none;color:var(--mut);border-radius:0;border-top:3px solid transparent;padding:11px 4px;font-size:13px}
+nav button.on{color:var(--ink);border-top-color:var(--g)}
+#login{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,var(--bg),var(--m));padding:20px}
+.lbox{width:100%;max-width:360px;background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:26px 22px;text-align:center}
+.lbox img{width:85%;max-width:280px;background:#fff;border-radius:12px;padding:8px 14px}.lbox h1{color:var(--g);margin:10px 0 2px}
+.lbox input{text-align:center;font-size:20px;letter-spacing:3px;text-transform:uppercase}.lbox button{width:100%;margin-top:8px}
+#err{color:var(--r);min-height:20px;font-size:13px;margin-top:6px}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left}.tw{overflow-x:auto}
