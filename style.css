@@ -1,3 +1,4 @@
+
 :root{--bg:#f2f6fb;--card:#fff;--ink:#14202e;--mut:#566679;--g:#2966a0;--line:#d9e1ea;--m:#cfe0f3;--r:#d2352c}
 @media(prefers-color-scheme:dark){:root{--bg:#0e1621;--card:#162130;--ink:#eaf1f8;--mut:#9db0c4;--g:#5b9bd5;--line:#27374b;--m:#1d3a57}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif;padding-bottom:70px}
