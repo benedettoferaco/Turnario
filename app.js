@@ -10,12 +10,19 @@ const isMgr = () => ["manager", "director", "admin"].includes(me.role), isTop = 
 function weekRange() { const n = new Date(); n.setHours(0, 0, 0, 0); n.setDate(n.getDate() - ((n.getDay() + 6) % 7)); const e = new Date(n); e.setDate(e.getDate() + 7); return [n, e]; }
 
 async function login() {
-  $("#err").textContent = "";
-  const { data, error } = await sb.functions.invoke("login-with-code", { body: { code: $("#code").value } });
-  if (error || !data?.token_hash) { $("#err").textContent = "Codice non valido o scaduto."; return; }
-  const r = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: "magiclink" });
-  if (r.error) { $("#err").textContent = "Accesso non riuscito. Riprova."; return; }
-  boot();
+  const err = $("#err"); err.textContent = "Verifico il codice…";
+  try {
+    const { data, error } = await sb.functions.invoke("login-with-code", { body: { code: $("#code").value } });
+    if (error || !data?.token_hash) {
+      let m = data?.error;
+      if (!m && error?.context?.json) { try { m = (await error.context.json()).error; } catch (_) {} }
+      err.textContent = m || ("Funzione non raggiungibile: " + (error?.message || "controlla che login-with-code sia pubblicata"));
+      return;
+    }
+    const r = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: "magiclink" });
+    if (r.error) { err.textContent = "Accesso non riuscito: " + r.error.message; return; }
+    err.textContent = ""; boot();
+  } catch (e) { console.error(e); err.textContent = "Errore: " + e.message; }
 }
 async function boot() {
   const { data: s } = await sb.auth.getSession();
@@ -85,16 +92,7 @@ async function codici() {
   ${i.used_at ? `<div class="mut">Codice già usato</div>` : `<div>Codice: <b style="font-family:monospace;letter-spacing:1px">${esc(i.code_plain)}</b></div><div class="mut">Scade il ${day(i.expires_at)}</div>`}</div>`).join("")}`);
 }
 
-
-$("#go").onclick = login;
-$("#code").onkeydown = (e) => e.key === "Enter" && login();
-$("#code").oninput = (e) => {
-  const v = e.target.value.replace(/[^a-z0-9]/gi, "").toUpperCase().slice(0, 12);
-  e.target.value = v.match(/.{1,4}/g)?.join("-") || "";
-};
-$("#out").onclick = async () => {
-  await sb.auth.signOut();
-  me = null;
-  boot();
-};
+$("#go").onclick = login; $("#code").onkeydown = (e) => e.key === "Enter" && login();
+$("#code").oninput = (e) => { const v = e.target.value.replace(/[^a-z0-9]/gi, "").toUpperCase().slice(0, 8); e.target.value = v.length > 4 ? v.slice(0, 4) + "-" + v.slice(4) : v; };
+$("#out").onclick = async () => { await sb.auth.signOut(); me = null; boot(); };
 boot();
