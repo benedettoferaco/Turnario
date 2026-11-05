@@ -47,7 +47,7 @@ async function boot() {
   const { data } = await sb.from("profiles").select("*").eq("id", s.session.user.id).single();
   if (!data) { await sb.auth.signOut(); return boot(); }
   me = data; $("#login").hidden = true; $("#app").hidden = false; curWeek = iso(mondayOf(0));
-  document.body.classList.toggle("dir", isTop());
+  document.body.classList.add("dir");
   const { data: d } = await sb.from("departments").select("*").order("id"); deps = d || [];
   go(isTop() ? "dash" : "home");
 }
@@ -59,19 +59,18 @@ async function badges() {
   [["richieste", r.count], ["cassa", c.count]].forEach(([k, n]) => { const e = $("#b-" + k); if (e) { e.textContent = n || 0; e.hidden = !n; } });
 }
 const goWeek = (e) => (e === "crea-turni" ? (wk = 1, go("turni")) : go(e));
+function sideItems() {
+  if (isTop()) return SIDE;
+  const casse = depOf(me).name === "Casse";
+  return [["home", "Home"], ...(isMgr() ? [["turni", "Turni"]] : []), ["richieste", "Richieste e cambi turno"], ...(casse ? [["cassa", me.role === "manager" ? "Chiusure di cassa" : "Cassa"]] : []), ["chat", "Chat"], ["team", "Team"], ["profilo", "Profilo"]];
+}
 function go(t) {
   tab = t; document.body.classList.remove("open");
-  if (isTop()) {
-    $("#side").innerHTML = `<div class="row" style="flex-wrap:nowrap;margin-bottom:12px"><span class="av">${esc(ini(me))}</span><div><b>${esc(me.first_name)} ${esc(me.last_name)}</b><div class="mut">${RN[me.role]}</div></div></div>
-      <button class="btn" style="width:100%;margin-bottom:10px" data-t="crea-turni">+ Crea turni</button>` +
-      SIDE.map(([k, l]) => `<button class="si ${k === tab ? "on" : ""}" data-t="${k}"><span>${l}</span><span class="tag" id="b-${k}" hidden></span></button>`).join("");
-    $("#side").querySelectorAll("button").forEach((b) => (b.onclick = () => goWeek(b.dataset.t)));
-    badges();
-  } else {
-    const items = [["home", "Home"], ...(isMgr() ? [["turni", "Turni"]] : []), ["team", "Team"], ["profilo", "Profilo"]];
-    $("#nav").innerHTML = items.map(([k, l]) => `<button class="${k === tab ? "on" : ""}" data-t="${k}">${l}</button>`).join("");
-    $("#nav").querySelectorAll("button").forEach((b) => (b.onclick = () => go(b.dataset.t)));
-  }
+  $("#side").innerHTML = `<div class="row" style="flex-wrap:nowrap;margin-bottom:12px"><span class="av">${esc(ini(me))}</span><div><b>${esc(me.first_name)} ${esc(me.last_name)}</b><div class="mut">${RN[me.role]}</div></div></div>` +
+    (isMgr() ? `<button class="btn" style="width:100%;margin-bottom:10px" data-t="crea-turni">+ Crea turni</button>` : "") +
+    sideItems().map(([k, l]) => `<button class="si ${k === tab ? "on" : ""}" data-t="${k}"><span>${l}</span><span class="tag" id="b-${k}" hidden></span></button>`).join("");
+  $("#side").querySelectorAll("button").forEach((b) => (b.onclick = () => goWeek(b.dataset.t)));
+  if (isTop()) badges();
   ({ home, dash, turni, team, crea, codici, profilo, richieste: () => soon("Richieste e cambi turno"), cassa: () => soon("Chiusure di cassa"), bot: () => soon("Assistente turni"), chat: () => soon("Chat") })[tab]();
 }
 
@@ -228,10 +227,16 @@ async function codici() {
 
 $("#go").onclick = login; $("#code").onkeydown = (e) => e.key === "Enter" && login();
 $("#out").onclick = async () => { await sb.auth.signOut(); me = null; document.body.classList.remove("dir"); boot(); };
-$("#menu").onclick = () => document.body.classList.toggle("open"); $("#scrim").onclick = () => document.body.classList.remove("open");
+const wide = () => window.matchMedia("(min-width:900px)").matches;
+$("#menu").onclick = () => {
+  if (wide()) { const c = document.body.classList.toggle("collapsed"); try { localStorage.setItem("side", c ? "0" : "1"); } catch (_) {} }
+  else document.body.classList.toggle("open");
+};
+$("#scrim").onclick = () => document.body.classList.remove("open");
+const toHome = () => me && go(isTop() ? "dash" : "home");
+$("#homebtn").onclick = toHome; $("#logo").onclick = toHome;
+try { if (localStorage.getItem("side") === "0") document.body.classList.add("collapsed"); } catch (_) {}
 // Passata la mezzanotte di domenica la pagina si aggiorna: la settimana prossima diventa quella corrente e la nuova prossima è vuota.
 const tick = () => { if (!me) return; const k = iso(mondayOf(0)); if (k !== curWeek) { curWeek = k; wk = 0; go(tab); } };
 setInterval(tick, 60000); document.addEventListener("visibilitychange", tick);
 boot();
-
-
