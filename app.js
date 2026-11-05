@@ -62,7 +62,7 @@ const goWeek = (e) => (e === "crea-turni" ? (wk = 1, go("turni")) : go(e));
 function sideItems() {
   if (isTop()) return SIDE;
   const casse = depOf(me).name === "Casse";
-  return [["home", "Home"], ...(isMgr() ? [["turni", "Turni"]] : []), ["richieste", "Richieste e cambi turno"], ...(casse ? [["cassa", me.role === "manager" ? "Chiusure di cassa" : "Cassa"]] : []), ["chat", "Chat"], ["team", "Team"], ["profilo", "Profilo"]];
+  return [["home", "Home"], ...(isMgr() ? [["turni", "Turni"], ["bot", "Assistente turni"]] : []), ["richieste", "Richieste e cambi turno"], ...(casse ? [["cassa", me.role === "manager" ? "Chiusure di cassa" : "Cassa"]] : []), ["chat", "Chat"], ["team", "Team"], ["profilo", "Profilo"]];
 }
 function go(t) {
   tab = t; document.body.classList.remove("open");
@@ -71,7 +71,7 @@ function go(t) {
     sideItems().map(([k, l]) => `<button class="si ${k === tab ? "on" : ""}" data-t="${k}"><span>${l}</span><span class="tag" id="b-${k}" hidden></span></button>`).join("");
   $("#side").querySelectorAll("button").forEach((b) => (b.onclick = () => goWeek(b.dataset.t)));
   if (isTop()) badges();
-  ({ home, dash, turni, team, crea, codici, profilo, richieste: () => soon("Richieste e cambi turno"), cassa: () => soon("Chiusure di cassa"), bot: () => soon("Assistente turni"), chat: () => soon("Chat") })[tab]();
+  ({ home, dash, turni, team, crea, codici, profilo, richieste: () => soon("Richieste e cambi turno"), cassa: () => soon("Chiusure di cassa"), bot: botPage, chat: () => soon("Chat") })[tab]();
 }
 
 // ---- Home (addetti e responsabili)
@@ -143,30 +143,70 @@ async function nextView() {
   show(`<h2>Turni della prossima settimana</h2><p class="mut">${wkLabel(1)}</p>${(sh || []).map((s) => `<div class="card row"><b style="width:90px">${day(s.starts_at)}</b><span>${hh(toHours(s))}</span></div>`).join("") || `<p class="mut">Nessun turno per te questa settimana.</p>`}<button class="alt" id="back">Indietro</button>`);
   $("#back").onclick = () => go(isTop() ? "dash" : "home");
 }
-async function turni() {
-  const a = mondayOf(wk), b = addDays(a, 7); edits = {}; plan = {};
+let brush = null, hist = [], pending = null;
+const len2 = (c) => (c.e > c.s ? c.e - c.s : c.e + 24 - c.s);
+const BR = [["6-14", { s: 6, e: 14 }], ["14-22", { s: 14, e: 22 }], ["22-6", { s: 22, e: 6 }], ["R", "R"]];
+async function loadWeek() {
+  const a = mondayOf(wk), b = addDays(a, 7); plan = {};
   const [{ data: sh }, { data: pe }, { data: wp }] = await Promise.all([
     sb.from("shifts").select("*").gte("starts_at", a.toISOString()).lt("starts_at", b.toISOString()),
-    sb.from("profiles").select("id,first_name,last_name,department_id,role").eq("active", true).neq("role", "admin"),
+    sb.from("profiles").select("id,first_name,last_name,department_id,role,contract_hours").eq("active", true).neq("role", "admin"),
     sb.from("week_plans").select("department_id").eq("week_start", iso(a)),
   ]);
   people = (pe || []).sort((x, y) => x.department_id - y.department_id || x.last_name.localeCompare(y.last_name));
   (sh || []).forEach((s) => { const i = dayIdx(s, wk); ((plan[s.profile_id] ||= {})[i] ||= { ...toHours(s), ids: [] }).ids.push(s.id); });
-  const created = (wp || []).length > 0;
+  return (wp || []).length > 0;
+}
+async function turni() {
+  const created = await loadWeek(); edits = pending || {}; pending = null; hist = [];
   show(`<h2>Turni</h2><div class="chips"><button class="${wk === 0 ? "on" : ""}" id="w0">Questa settimana</button><button class="${wk === 1 ? "on" : ""}" id="w1">Turni della prossima settimana</button></div>
-  <p class="mut">${wkLabel(wk)} · ${wk === 1 && !created ? "Turni ancora da creare: dopo il salvataggio diventano visibili al personale." : "Tocca una casella per cambiare l’orario (solo ore intere)."}</p>
+  <p class="mut">${wkLabel(wk)} · ${wk === 1 && !created ? "Turni ancora da creare: dopo il salvataggio diventano visibili al personale." : "Scegli un orario in alto e tocca le caselle: si imposta subito."}</p>
+  <div class="chips" id="brush"></div>
+  <div class="row" style="margin-bottom:10px"><button class="alt" id="un">Annulla ultima modifica</button><button class="alt" id="cp">Copia settimana scorsa</button><button class="alt" id="cl">Svuota</button><button class="alt" id="as">Chiedi all’assistente</button></div>
   <div class="tw"><table id="grid"></table></div><button id="sv" style="margin-top:12px">Salva settimana</button>`);
   $("#w0").onclick = () => { wk = 0; turni(); }; $("#w1").onclick = () => { wk = 1; turni(); }; $("#sv").onclick = saveWeek;
-  grid();
+  $("#un").onclick = undo; $("#cp").onclick = copyPrev; $("#cl").onclick = clearAll; $("#as").onclick = () => go("bot");
+  drawBrush(); grid();
 }
+function drawBrush() {
+  $("#brush").innerHTML = `<button class="${brush === null ? "on" : ""}" data-b="">Scegli ogni volta</button>` + BR.map(([k, v]) => `<button class="${brush === k ? "on" : ""}" data-b="${k}">${v === "R" ? "Riposo" : v.s + "–" + v.e}</button>`).join("");
+  $("#brush").querySelectorAll("button").forEach((b) => (b.onclick = () => { brush = b.dataset.b || null; drawBrush(); }));
+}
+const pushHist = () => hist.push(JSON.stringify(edits));
+function undo() { if (!hist.length) return; edits = JSON.parse(hist.pop()); grid(); }
 const cur = (pid, i) => edits[pid + "|" + i] ?? plan[pid]?.[i] ?? null;
-function grid() {
-  const a = mondayOf(wk);
-  $("#grid").innerHTML = `<tr><th>Persona</th>${DN.map((d, i) => `<th>${d}<br><span class="mut">${addDays(a, i).getDate()}</span></th>`).join("")}</tr>` +
-    people.map((p) => `<tr><td><b>${esc(p.first_name)} ${esc(p.last_name)}</b><div class="mut">${esc(depOf(p).name)}</div></td>${DN.map((_, i) => { const c = cur(p.id, i), ch = (p.id + "|" + i) in edits;
-      return `<td><button class="s can ${cls(c)} ${ch ? "chg" : ""}" data-p="${p.id}" data-i="${i}">${c === "R" ? "Riposo" : c ? hh(c) : "—"}</button></td>`; }).join("")}</tr>`).join("");
-  $("#grid").querySelectorAll(".s").forEach((b) => (b.onclick = () => openCell(b.dataset.p, +b.dataset.i)));
+function okFor(p, v) { return v === "R" || !!depOf(p).is_night || (v.e > v.s && v.e <= 22); }
+function applyCell(pid, i, v, quiet) {
+  const p = people.find((x) => x.id === pid);
+  if (!okFor(p, v)) { if (!quiet) alert("Fuori dal reparto Notte i turni finiscono entro le 22."); return false; }
+  edits[pid + "|" + i] = v; return true;
 }
+function rowH(pid) { let h = 0; for (let i = 0; i < 7; i++) { const c = cur(pid, i); if (c && c !== "R") h += len2(c); } return h; }
+function grid() {
+  const a = mondayOf(wk), nightP = people.filter((p) => depOf(p).is_night);
+  $("#grid").innerHTML = `<tr><th>Persona</th>${DN.map((d, i) => `<th>${d}<br><span class="mut">${addDays(a, i).getDate()}</span></th>`).join("")}<th>Ore</th></tr>` +
+    people.map((p) => { const h = rowH(p.id); return `<tr><td><b class="nm" data-r="${p.id}" style="cursor:pointer">${esc(p.first_name)} ${esc(p.last_name)}</b><div class="mut">${esc(depOf(p).name)}</div></td>${DN.map((_, i) => { const c = cur(p.id, i), ch = (p.id + "|" + i) in edits;
+      return `<td><button class="s can ${cls(c)} ${ch ? "chg" : ""}" data-p="${p.id}" data-i="${i}">${c === "R" ? "Riposo" : c ? hh(c) : "—"}</button></td>`; }).join("")}<td style="${h > p.contract_hours ? "color:var(--r);font-weight:800" : ""}">${h}/${p.contract_hours}</td></tr>`; }).join("") +
+    (nightP.length ? `<tr><td><b>Notte (1–2)</b></td>${DN.map((_, i) => { const n = nightP.filter((p) => cls(cur(p.id, i)) === "N").length; return `<td style="${n < 1 ? "color:var(--r);font-weight:800" : ""}">${n}</td>`; }).join("")}<td></td></tr>` : "");
+  $("#grid").querySelectorAll(".s").forEach((b) => (b.onclick = () => cellTap(b.dataset.p, +b.dataset.i)));
+  $("#grid").querySelectorAll(".nm").forEach((b) => (b.onclick = () => fillRow(b.dataset.r)));
+}
+function cellTap(pid, i) {
+  if (brush === null) return openCell(pid, i);
+  pushHist(); applyCell(pid, i, BR.find(([k]) => k === brush)[1]); grid();
+}
+function fillRow(pid) {
+  if (brush === null) return alert("Scegli prima un orario in alto: verrà messo su tutta la riga.");
+  pushHist(); let bad = false; for (let i = 0; i < 7; i++) if (!applyCell(pid, i, BR.find(([k]) => k === brush)[1], true)) bad = true;
+  if (bad) alert("Fuori dal reparto Notte i turni finiscono entro le 22."); grid();
+}
+async function copyPrev() {
+  const a = mondayOf(wk - 1), b = addDays(a, 7);
+  const { data } = await sb.from("shifts").select("*").gte("starts_at", a.toISOString()).lt("starts_at", b.toISOString());
+  if (!(data || []).length) return alert("La settimana scorsa non ha turni da copiare.");
+  pushHist(); (data || []).forEach((s) => { if (people.find((p) => p.id === s.profile_id)) applyCell(s.profile_id, dayIdx(s, wk - 1), toHours(s), true); }); grid();
+}
+function clearAll() { if (!confirm("Mettere tutti in riposo per questa settimana?")) return; pushHist(); people.forEach((p) => { for (let i = 0; i < 7; i++) edits[p.id + "|" + i] = "R"; }); grid(); }
 function openCell(pid, i) {
   const p = people.find((x) => x.id === pid), night = !!depOf(p).is_night, c = cur(pid, i), v = c && c !== "R" ? c : { s: 6, e: 14 };
   const opts = (lo, hi, sel) => { let o = ""; for (let h = lo; h <= hi; h++) o += `<option value="${h}" ${h === sel ? "selected" : ""}>${h}</option>`; return o; };
@@ -176,7 +216,7 @@ function openCell(pid, i) {
   <div class="row"><label style="flex:1">Dalle ore<select id="hs">${opts(0, 23, v.s)}</select></label><label style="flex:1">Alle ore<select id="he">${opts(1, night ? 24 : 22, Math.min(v.e, night ? 24 : 22))}</select></label></div>
   <p class="mut">${night ? "Reparto Notte: si può lavorare di notte." : "Fuori dal reparto Notte i turni finiscono entro le 22."}</p>
   <div class="row"><button id="ok">Imposta</button><button class="alt" id="rest">Riposo</button><button class="alt" id="no">Annulla</button></div>`;
-  const set = (val) => { edits[pid + "|" + i] = val; $("#dlg").close(); grid(); };
+  const set = (val) => { pushHist(); if (applyCell(pid, i, val)) { $("#dlg").close(); grid(); } };
   $("#dlg").querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => set({ s: +b.dataset.s, e: +b.dataset.e })));
   $("#ok").onclick = () => { const s = +$("#hs").value, e = +$("#he").value; if (e <= s && !night) return alert("L’ora di fine deve essere dopo quella di inizio."); set({ s, e }); };
   $("#rest").onclick = () => set("R"); $("#no").onclick = () => $("#dlg").close();
@@ -198,6 +238,75 @@ async function saveWeek() {
   if (depsDone.size) await sb.from("week_plans").upsert([...depsDone].map((d) => ({ week_start: iso(mon), department_id: d, created_by: me.id })), { onConflict: "week_start,department_id" });
   alert(errs.length ? "Alcuni turni non sono stati salvati:\n" + errs.join("\n") : "Turni salvati.");
   turni();
+}
+
+// ---- assistente turni: ti chiede di cosa hai bisogno e prepara una proposta, che poi controlli e salvi
+const SHT = { M: { s: 6, e: 14 }, P: { s: 14, e: 22 }, N: { s: 22, e: 6 } }, SHN = { M: "mattina", P: "pomeriggio", N: "notte" };
+const norm = (t) => String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const DFULL = ["lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica"], DABB = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+const dayList = (x) => [...new Set(x.split(/[^a-z]+/).map((t) => (DFULL.indexOf(t) >= 0 ? DFULL.indexOf(t) : DABB.indexOf(t))).filter((i) => i >= 0))].sort();
+let bot = { log: [], step: "", a: {} };
+const say = (t, chips = []) => bot.log.push({ r: "bot", t, chips });
+function botReset() { bot = { log: [], step: "week", a: {} }; say("Ciao! Ti aiuto a creare i turni, solo a ore. Per quale settimana?", ["Questa settimana", "Prossima settimana"]); }
+function botPage() {
+  if (!bot.log.length) botReset();
+  const last = bot.log[bot.log.length - 1], chips = last.r === "bot" ? last.chips : [];
+  show(`<h2>Assistente turni</h2><div class="msgs" style="background:var(--rest);border-radius:10px;padding:10px;max-height:calc(100vh - 360px)">${bot.log.map((m) => `<div class="b ${m.r === "me" ? "me" : ""}">${m.t}</div>`).join("")}</div>
+  ${chips.length ? `<div class="chips">${chips.map((c) => `<button data-c="${esc(c)}">${esc(c)}</button>`).join("")}</div>` : ""}
+  <div class="row" style="flex-wrap:nowrap"><input id="bi" placeholder="Scrivi qui la tua risposta" style="flex:1" autocomplete="off"><button id="bs">Invia</button></div>
+  <button class="alt" id="br" style="margin-top:8px">Ricomincia</button>`);
+  $("#main").querySelectorAll("[data-c]").forEach((b) => (b.onclick = () => botIn(b.dataset.c)));
+  $("#bs").onclick = () => botIn($("#bi").value); $("#bi").onkeydown = (e) => e.key === "Enter" && botIn($("#bi").value); $("#br").onclick = () => { botReset(); botPage(); };
+  const m = $(".msgs"); if (m) m.scrollTop = m.scrollHeight;
+}
+async function botIn(t) {
+  t = String(t || "").trim(); if (!t) return; bot.log.push({ r: "me", t: esc(t) }); const x = norm(t), a = bot.a;
+  if (/ricomincia/.test(x)) { botReset(); return botPage(); }
+  if (bot.step === "week") {
+    wk = /prossim/.test(x) ? 1 : 0; await loadWeek(); a.wk = wk;
+    const dl = isTop() ? deps.filter((d) => d.name !== "Direzione") : [depOf(me)];
+    if (dl.length === 1) { a.dep = dl[0]; return askNeed(0); }
+    bot.step = "dep"; say("Per quale reparto?", dl.map((d) => d.name));
+  } else if (bot.step === "dep") {
+    const d = deps.find((d) => norm(d.name) === x || x.includes(norm(d.name)));
+    if (!d) say("Non riconosco il reparto. Scrivi il nome o scegli un pulsante.", deps.filter((d) => d.name !== "Direzione").map((d) => d.name)); else { a.dep = d; return askNeed(0); }
+  } else if (bot.step.startsWith("need")) {
+    const k = a.keys[+bot.step.slice(4)], n = parseInt(x.replace(/[^0-9]/g, ""), 10);
+    if (isNaN(n) || n > 9) say("Scrivi un numero, per esempio 2.", ["0", "1", "2", "3", "4"]); else { (a.need ||= {})[k] = n; return askNeed(+bot.step.slice(4) + 1); }
+  } else if (bot.step === "days") {
+    let d = /tutti|ogni giorno|sette/.test(x) ? [0, 1, 2, 3, 4, 5, 6] : /lun\w*\s*(-|a|–)\s*sab/.test(x) ? [0, 1, 2, 3, 4, 5] : /lun\w*\s*(-|a|–)\s*ven/.test(x) ? [0, 1, 2, 3, 4] : dayList(x);
+    if (!d.length) say("Non ho capito i giorni. Scegli un pulsante o scrivi i giorni, per esempio «lun mar mer».", ["Tutti i giorni", "Lunedì–Sabato", "Lunedì–Venerdì"]);
+    else { a.days = d; bot.step = "un"; say("Qualcuno non può lavorare in certi giorni? Scrivi il nome e i giorni, separando le persone con un punto e virgola (per esempio: «Giulia mer gio; Luca sab»). Oppure scegli Nessuno.", ["Nessuno"]); }
+  } else if (bot.step === "un") {
+    const team = people.filter((p) => p.department_id === a.dep.id && p.role === "staff"); a.un = {};
+    if (!/^nessun/.test(x)) x.split(";").forEach((seg) => { const p = team.find((p) => seg.includes(norm(p.first_name))); const dd = dayList(seg); if (p) dd.forEach((i) => (a.un[p.id] ||= new Set()).add(i)); });
+    return botBuild();
+  } else if (bot.step === "done") {
+    if (/tabella|apri/.test(x)) return go("turni"); say("Per aprire la proposta scegli «Apri la tabella», oppure scrivi «ricomincia».", ["Apri la tabella", "Ricomincia"]);
+  }
+  botPage();
+}
+function askNeed(i) {
+  const a = bot.a; a.keys = a.dep.is_night ? ["N"] : ["M", "P"];
+  if (i >= a.keys.length) { bot.step = "days"; say("In quali giorni serve questa copertura?", ["Tutti i giorni", "Lunedì–Sabato", "Lunedì–Venerdì"]); return botPage(); }
+  bot.step = "need" + i; const k = a.keys[i], sh = SHT[k];
+  say(`Quante persone servono di <b>${SHN[k]}</b> (${sh.s}–${sh.e}) in ${esc(a.dep.name)}?`, k === "N" ? ["1", "2"] : ["0", "1", "2", "3", "4"]); botPage();
+}
+function botBuild() {
+  const a = bot.a, team = people.filter((p) => p.department_id === a.dep.id && p.role === "staff"), hours = {}, work = {}, gaps = [];
+  team.forEach((p) => { hours[p.id] = 0; work[p.id] = Array(7).fill(null); });
+  const restOk = (row, d, sh) => { const pv = row[d - 1]; if (!pv) return true; const end = pv.e <= pv.s ? pv.e : pv.e - 24; return sh.s - end >= 11; };
+  const streakOk = (row, d) => { let n = 0; for (let i = d - 1; i >= 0 && row[i]; i--) n++; return n < 6; };
+  for (let d = 0; d < 7; d++) { if (!a.days.includes(d)) continue;
+    for (const k of a.keys) { const need = a.need[k] || 0, sh = SHT[k];
+      const cand = team.filter((p) => !work[p.id][d] && !(a.un[p.id] || new Set()).has(d) && hours[p.id] + len2(sh) <= p.contract_hours && restOk(work[p.id], d, sh) && streakOk(work[p.id], d))
+        .sort((x, y) => hours[x.id] - hours[y.id] || x.last_name.localeCompare(y.last_name));
+      cand.slice(0, need).forEach((p) => { work[p.id][d] = sh; hours[p.id] += len2(sh); });
+      if (cand.length < need) gaps.push(`${DN[d]} ${SHN[k]}: ${need - cand.length === 1 ? "manca 1 persona" : "mancano " + (need - cand.length) + " persone"}`); } }
+  const ed = {}; team.forEach((p) => { for (let d = 0; d < 7; d++) ed[p.id + "|" + d] = work[p.id][d] || "R"; });
+  pending = ed; bot.step = "done";
+  say(`Ecco la proposta per <b>${esc(a.dep.name)}</b>, ${wkLabel(a.wk)}:<br>${team.map((p) => `${esc(p.first_name)} ${esc(p.last_name)}: <b>${hours[p.id]}</b> ore su ${p.contract_hours}`).join("<br>")}${gaps.length ? `<br><br><b>Da sistemare:</b><br>${gaps.join("<br>")}` : "<br><br>Tutta la copertura richiesta è assegnata."}<br><br>Rispetto 11 ore di riposo tra i turni, al massimo 6 giorni di fila e le ore da contratto. Aprila nella tabella per ritoccarla e poi salvala.`, ["Apri la tabella", "Ricomincia"]);
+  botPage();
 }
 
 // ---- team, profili, codici
@@ -240,3 +349,4 @@ try { if (localStorage.getItem("side") === "0") document.body.classList.add("col
 const tick = () => { if (!me) return; const k = iso(mondayOf(0)); if (k !== curWeek) { curWeek = k; wk = 0; go(tab); } };
 setInterval(tick, 60000); document.addEventListener("visibilitychange", tick);
 boot();
+
