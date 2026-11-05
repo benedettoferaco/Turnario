@@ -73,3 +73,7 @@ main label{display:block;margin-top:8px;color:var(--mut);font-size:13px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
 .kpi{cursor:pointer;margin:0}.kpi b{display:block;font-size:30px;color:var(--g)}
 
+/* nascondi e mostra la barra laterale */
+@media(min-width:900px){body.dir .menu{display:inline-block}body.dir.collapsed #side{transform:translateX(-100%)}body.dir.collapsed header{margin-left:0}body.dir.collapsed main{margin-left:auto;margin-right:auto;max-width:860px}}
+
+
