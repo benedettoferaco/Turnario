@@ -2,7 +2,7 @@
 <title>Turnario</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#2966a0"><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"></head><body>
 <div id="login"><div class="lbox"><img src="logo.png" alt="SIR"><h1>Turnario</h1><p class="mut" style="margin:0">Inserisci il tuo codice di accesso</p>
 <input id="code" type="text" placeholder="XXXX-XXXX" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" maxlength="14" enterkeyhint="go"><div id="err"></div><button class="btn" id="go">Entra</button><button class="btn alt" type="button" style="margin-top:8px" onclick="var c=document.getElementById('code');c.value='';c.focus()">Cancella</button></div></div>
-<div id="app" hidden><header><button class="menu" id="menu">☰</button><img class="logo" src="logo.png" alt="SIR"><h1>Turnario</h1><button class="btn alt" id="out">Esci</button></header><main id="main"></main><nav id="nav"></nav>
+<div id="app" hidden><header><button class="menu" id="menu">☰</button><img class="logo" src="logo.png" alt="SIR" id="logo" style="cursor:pointer"><h1>Turnario</h1><button class="alt" id="homebtn">Home</button><button class="btn alt" id="out">Esci</button></header><main id="main"></main><nav id="nav"></nav>
 <aside id="side"></aside><div class="scrim" id="scrim"></div></div>
 <dialog id="dlg"></dialog>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
