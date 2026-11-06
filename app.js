@@ -71,7 +71,7 @@ function go(t) {
     sideItems().map(([k, l]) => `<button class="si ${k === tab ? "on" : ""}" data-t="${k}"><span>${l}</span><span class="tag" id="b-${k}" hidden></span></button>`).join("");
   $("#side").querySelectorAll("button").forEach((b) => (b.onclick = () => goWeek(b.dataset.t)));
   if (isTop()) badges();
-  ({ home, dash, turni, team, crea, codici, profilo, richieste: () => soon("Richieste e cambi turno"), cassa: () => soon("Chiusure di cassa"), bot: botPage, chat: () => soon("Chat") })[tab]();
+  ({ home, dash, turni, team, crea, codici, profilo, richieste, cassa: () => soon("Chiusure di cassa"), bot: botPage, chat: () => soon("Chat") })[tab]();
 }
 
 // ---- Home (addetti e responsabili)
@@ -309,6 +309,80 @@ function botBuild() {
   botPage();
 }
 
+
+// ---- richieste: cambi turno e permessi
+const REASONS = ["Visita medica", "Motivo di salute", "Impegno familiare", "Esame o lezione", "Pratica burocratica", "Problema di trasporto", "Altro"];
+const ST = { open: "aperta", agreed: "collega trovato", approved: "approvata", rejected: "rifiutata", withdrawn: "ritirata" };
+let dirP = [];
+const nm = (id) => { const p = dirP.find((x) => x.id === id); return p ? `${p.first_name} ${p.last_name}` : "—"; };
+const hoursTo = (d) => (new Date(d) - Date.now()) / 36e5;
+async function rpc(fn, args) { const { error } = await sb.rpc(fn, args); if (error) { alert(error.message); return false; } return true; }
+function ask(title, body, label, fn) {
+  $("#dlg").innerHTML = `<b>${title}</b><p>${body}</p><div class="row"><button id="yes">${label}</button><button class="alt" id="no">Annulla</button></div>`;
+  $("#yes").onclick = async () => { $("#dlg").close(); await fn(); }; $("#no").onclick = () => $("#dlg").close(); $("#dlg").showModal();
+}
+async function richieste() {
+  const [{ data: rq }, { data: dd }, { data: my }] = await Promise.all([
+    sb.from("requests").select("*").order("created_at", { ascending: false }),
+    sb.from("directory").select("id,first_name,last_name,department_id,role"),
+    me.role === "admin" ? Promise.resolve({ data: [] }) : sb.from("shifts").select("*").eq("profile_id", me.id).gte("starts_at", new Date(Date.now() + 36 * 36e5).toISOString()).order("starts_at").limit(30),
+  ]);
+  dirP = dd || []; const mates = dirP.filter((p) => p.department_id === me.department_id && p.id !== me.id);
+  const form = me.role === "admin" ? "" : `<div class="card"><b>Nuova richiesta</b>
+    <label>Tipo<select id="rt"><option value="swap">Cambio turno</option><option value="leave">Permesso</option></select></label>
+    <div id="rs"><label>Turno da cambiare (si chiede fino a 36 ore prima)<select id="rsh">${(my || []).map((s) => `<option value="${s.id}">${day(s.starts_at)} · ${hh(toHours(s))}</option>`).join("") || `<option value="">Nessun turno disponibile</option>`}</select></label>
+    <label>Chiedi a<select id="rto"><option value="">Tutti i colleghi del reparto</option>${isMgr() ? mates.map((p) => `<option value="${p.id}">${esc(p.first_name)} ${esc(p.last_name)}</option>`).join("") : ""}</select></label></div>
+    <div id="rl" hidden><label>Giorno del permesso<input id="rld" type="date"></label></div>
+    <label>Motivo<select id="rr">${REASONS.map((r) => `<option>${r}</option>`).join("")}</select></label><textarea id="rn" rows="2" placeholder="Scrivi il motivo" hidden style="margin-top:8px"></textarea>
+    <button id="rsend" style="margin-top:10px">Invia richiesta</button></div>`;
+  const cards = (rq || []).map((r) => {
+    const mine = r.requester === me.id, rdep = (dirP.find((p) => p.id === r.requester) || {}).department_id, sameDept = rdep === me.department_id;
+    const canMgr = !mine && (isTop() || (me.role === "manager" && sameDept)), live = r.status === "open" || r.status === "agreed", sw = r.kind === "swap";
+    const act = []; const B = (k, l, alt = true, dis = false) => act.push(`<button class="${alt ? "alt" : ""}" data-a="${k}" data-id="${r.id}" ${dis ? "disabled" : ""}>${l}</button>`);
+    if (live) {
+      if (sw && r.status === "open" && !mine && sameDept && me.role !== "admin" && !isTop() && (!r.addressed_to || r.addressed_to === me.id)) hoursTo(r.shift_start) < 30 ? act.push(`<span class="mut">Offerte chiuse: meno di 30 ore al turno</span>`) : B("offer", "Mi offro", false);
+      if (canMgr) { B("ok", "Approva", false, sw && r.status !== "agreed"); B("no", "Rifiuta"); if (sw && r.status !== "agreed") act.push(`<span class="mut">Serve prima un collega disponibile</span>`); }
+      if (canMgr && r.withdraw_requested) { B("wdok", "Accetta il ritiro", false); B("wdno", "Nega il ritiro"); }
+      if (canMgr && r.undo_requested) B("undook", "Annulla l’offerta di " + esc(nm(r.offered_by)));
+      if (isTop() && sw && !mine) { const ex = dirP.filter((p) => p.department_id !== rdep && p.department_id !== 1); act.push(`<select id="ex-${r.id}" style="width:auto"><option value="">Eccezione: altro reparto…</option>${ex.map((p) => `<option value="${p.id}">${esc(p.first_name)} ${esc(p.last_name)}</option>`).join("")}</select><button class="alt" data-a="exc" data-id="${r.id}">Assegna</button>`); }
+      if (mine) act.push(r.withdraw_requested ? `<span class="mut">Richiesta di ritiro inviata al responsabile</span>` : sw && hoursTo(r.shift_start) < 36 ? `<span class="mut">Ritiro non più possibile: meno di 36 ore al turno</span>` : `<button class="alt" data-a="wd" data-id="${r.id}">Chiedi di ritirare</button>`);
+      if (sw && r.offered_by === me.id && r.status === "agreed") act.push(r.undo_requested ? `<span class="mut">Richiesta di annullamento inviata al responsabile</span>` : `<button class="alt" data-a="undoreq" data-id="${r.id}">Chiedi al responsabile di annullare l’offerta</button>`);
+    }
+    const tg = (t, k = "") => `<span class="tag ${k}">${t}</span>`;
+    return `<div class="card"><div class="row"><b style="flex:1">${mine ? "Tu" : esc(nm(r.requester))} · ${sw ? "Cambio turno" : "Permesso"}</b>${tg(r.withdraw_requested && live ? "ritiro richiesto" : r.status === "agreed" ? "collega trovato, attende il responsabile" : ST[r.status], r.status === "approved" ? "ok" : r.status === "rejected" || r.status === "withdrawn" ? "ko" : "")}</div>
+      <div class="mut">${sw ? `${day(r.shift_start)} · ${hh(toHours({ starts_at: r.shift_start, ends_at: r.shift_end }))}${r.offered_by ? " · con " + esc(nm(r.offered_by)) : ""}${r.addressed_to ? " · richiesta a " + esc(nm(r.addressed_to)) : ""}` : `Giorno ${new Date(r.leave_date + "T12:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}`}${r.exception ? " · eccezione del direttore" : ""}</div>
+      <p style="margin:6px 0">${esc(r.reason)}</p><div class="row">${act.join("")}</div></div>`;
+  }).join("");
+  show(`<h2>Richieste e cambi turno</h2>${form}<h3>Richieste</h3>${cards || `<p class="mut">Nessuna richiesta.</p>`}`);
+  const m = $("#main");
+  if (form) {
+    $("#rt").onchange = () => { const sw = $("#rt").value === "swap"; $("#rs").hidden = !sw; $("#rl").hidden = sw; };
+    $("#rr").onchange = () => ($("#rn").hidden = $("#rr").value !== "Altro");
+    $("#rsend").onclick = async () => {
+      const kind = $("#rt").value, rr = $("#rr").value, note = $("#rn").value.trim();
+      if (rr === "Altro" && !note) return alert("Hai scelto «Altro»: scrivi il motivo.");
+      if (kind === "swap" && !$("#rsh").value) return alert("Scegli il turno da cambiare.");
+      if (kind === "leave" && !$("#rld").value) return alert("Scegli il giorno del permesso.");
+      const ok = await rpc("create_request", { p_kind: kind, p_shift: kind === "swap" ? $("#rsh").value : null, p_leave: kind === "leave" ? $("#rld").value : null, p_reason: rr === "Altro" ? note : rr, p_note: rr === "Altro" ? note : null, p_to: kind === "swap" && $("#rto").value ? $("#rto").value : null });
+      if (ok) { alert("Richiesta inviata."); richieste(); }
+    };
+  }
+  m.querySelectorAll("[data-a]").forEach((b) => (b.onclick = () => {
+    const id = b.dataset.id, r = (rq || []).find((x) => x.id === id), done = async (ok) => { if (ok) richieste(); };
+    ({
+      offer: () => ask("Conferma la tua offerta", `Ti stai offrendo per il turno di ${esc(nm(r.requester))}, ${day(r.shift_start)} (${hh(toHours({ starts_at: r.shift_start, ends_at: r.shift_end }))}). Una volta confermata non potrai tornare indietro: potrai solo chiedere al responsabile di reparto di annullarla.`, "Confermo l’offerta", async () => done(await rpc("offer_swap", { p_req: id }))),
+      ok: async () => done(await rpc("decide_request", { p_req: id, p_approve: true })),
+      no: async () => done(await rpc("decide_request", { p_req: id, p_approve: false })),
+      wd: () => ask("Chiedere il ritiro", "Il ritiro della richiesta deve essere accettato dal responsabile.", "Chiedi il ritiro", async () => done(await rpc("request_withdraw", { p_req: id }))),
+      wdok: async () => done(await rpc("decide_withdraw", { p_req: id, p_accept: true })),
+      wdno: async () => done(await rpc("decide_withdraw", { p_req: id, p_accept: false })),
+      undoreq: () => ask("Annullare l’offerta", "L’offerta non si annulla da soli: chiedi al responsabile di reparto di annullarla.", "Invia la richiesta", async () => done(await rpc("request_undo_offer", { p_req: id }))),
+      undook: async () => done(await rpc("decide_undo", { p_req: id, p_ok: true })),
+      exc: () => { const v = $("#ex-" + id).value; if (!v) return alert("Scegli la persona di un altro reparto."); ask("Attenzione: eccezione alla regola", `Di norma i cambi turno sono ammessi solo tra colleghi dello stesso reparto. Stai assegnando il turno di ${esc(nm(r.requester))} a ${esc(nm(v))}, di un altro reparto. Confermi l’eccezione?`, "Confermo l’eccezione", async () => done(await rpc("assign_exception", { p_req: id, p_profile: v }))); },
+    })[b.dataset.a]();
+  }));
+}
+
 // ---- team, profili, codici
 async function team() {
   const [{ data: dp }, { data: pe }] = await Promise.all([sb.from("departments").select("*").order("id"), sb.from("directory").select("*").order("last_name")]);
@@ -324,14 +398,19 @@ async function crea() {
   $("#ok").onclick = async () => {
     const { data, error } = await sb.functions.invoke("invite-user", { body: { first_name: $("#n").value, last_name: $("#c").value, contract_hours: $("#h").value, email: $("#m").value, role: $("#r").value, department: $("#d").value } });
     let msg = data?.error; if (error && !msg) { try { msg = (await error.context.json()).error; } catch { msg = "Operazione non riuscita"; } }
-    alert(msg ? msg : data.sent ? "Profilo creato: e-mail inviata." : "Profilo creato. Il codice è in «Profili e codici».");
+    alert(msg ? msg : data.sent ? "Profilo creato: e-mail con il codice inviata a " + $("#m").value + "." : "Profilo creato, ma l’e-mail non è partita" + (data.mail_error ? " (" + data.mail_error + ")" : "") + ". Il codice è in «Profili e codici»: puoi riprovare da lì.");
     if (!msg) go("codici");
   };
 }
 async function codici() {
   const { data } = await sb.from("invites").select("code_plain,profiles(first_name,last_name,email)").order("code_plain");
   show(`<h2>Profili e codici</h2><div class="card"><div class="mut">Link dell’app</div><b>${esc(location.origin + location.pathname)}</b></div>${(data || []).map((i) => `<div class="card"><b>${esc(i.profiles.first_name)} ${esc(i.profiles.last_name)}</b><div class="mut">${esc(i.profiles.email)}</div>
-  <div>Codice: <b style="font-family:monospace;letter-spacing:1px">${esc(i.code_plain)}</b></div><div class="mut">Valido sempre, riutilizzabile</div></div>`).join("")}`);
+  <div>Codice: <b style="font-family:monospace;letter-spacing:1px">${esc(i.code_plain)}</b></div><div class="mut">Valido sempre, riutilizzabile</div><button class="alt" data-m="${esc(i.profiles.email)}" style="margin-top:8px">Invia e-mail con il codice</button></div>`).join("")}`);
+  $("#main").querySelectorAll("[data-m]").forEach((b) => (b.onclick = async () => {
+    b.disabled = true; const { data: r, error } = await sb.functions.invoke("invite-user", { body: { email: b.dataset.m, resend: true } }); b.disabled = false;
+    let msg = r?.error; if (error && !msg) { try { msg = (await error.context.json()).error; } catch { msg = "Operazione non riuscita"; } }
+    alert(msg ? msg : r.sent ? "E-mail inviata." : "E-mail non partita" + (r.mail_error ? " (" + r.mail_error + ")" : "") + ".");
+  }));
 }
 
 $("#go").onclick = login; $("#code").onkeydown = (e) => e.key === "Enter" && login();
@@ -349,4 +428,5 @@ try { if (localStorage.getItem("side") === "0") document.body.classList.add("col
 const tick = () => { if (!me) return; const k = iso(mondayOf(0)); if (k !== curWeek) { curWeek = k; wk = 0; go(tab); } };
 setInterval(tick, 60000); document.addEventListener("visibilitychange", tick);
 boot();
+
 
