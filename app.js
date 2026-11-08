@@ -71,11 +71,12 @@ function go(t) {
     sideItems().map(([k, l]) => `<button class="si ${k === tab ? "on" : ""}" data-t="${k}"><span>${l}</span><span class="tag" id="b-${k}" hidden></span></button>`).join("");
   $("#side").querySelectorAll("button").forEach((b) => (b.onclick = () => goWeek(b.dataset.t)));
   if (isTop()) badges();
-  ({ home, dash, turni, team, crea, codici, profilo, richieste, cassa: () => soon("Chiusure di cassa"), bot: botPage, chat: () => soon("Chat") })[tab]();
+  ({ home, dash, turni, team, crea, codici, profilo, richieste, cassa: () => soon("Chiusure di cassa"), bot: botPage, chat: chatPage })[tab]();
 }
 
 // ---- Home (addetti e responsabili)
 async function home() {
+  const imp = await importantHtml();
   const a = mondayOf(0), b = addDays(a, 7), ti = (new Date().getDay() + 6) % 7;
   const [{ data: sh }, { data: nt }] = await Promise.all([
     sb.from("shifts").select("*").eq("profile_id", me.id).gte("starts_at", a.toISOString()).lt("starts_at", b.toISOString()).order("starts_at"),
@@ -85,7 +86,7 @@ async function home() {
   const t = by[ti], nx = [...Array(7).keys()].find((i) => i > ti && by[i]);
   show(`<div class="row" style="flex-wrap:nowrap;margin:6px 0 10px"><span class="av">${esc(ini(me))}</span><h2 style="margin:0">Ciao ${esc(me.first_name)}</h2></div>
   ${(nt || []).map((n) => `<div class="card" style="border:2px solid var(--r)"><b>Avviso per te</b><div style="margin-top:6px">${esc(n.body)}</div><button class="alt" data-n="${n.id}" style="margin-top:8px">Ho letto</button></div>`).join("")}
-  <div class="card" style="background:var(--${t ? (cls(t) === "P" ? "p" : "m") : "rest"});border-color:transparent"><div class="mut">Oggi, ${longDay(new Date())}</div><div style="font-size:44px;font-weight:800;line-height:1.1">${t ? hh(t) : "Riposo"}</div><div>${t ? part(t) : "Giornata libera"} · ${esc(depOf(me).name || "")}</div></div>
+  ${imp}<div class="card" style="background:var(--${t ? (cls(t) === "P" ? "p" : "m") : "rest"});border-color:transparent"><div class="mut">Oggi, ${longDay(new Date())}</div><div style="font-size:44px;font-weight:800;line-height:1.1">${t ? hh(t) : "Riposo"}</div><div>${t ? part(t) : "Giornata libera"} · ${esc(depOf(me).name || "")}</div></div>
   ${nx !== undefined ? `<div class="card"><div class="mut">Prossimo turno</div><b>${DN[nx]} ${addDays(a, nx).getDate()}</b> · ${part(by[nx])} ${hh(by[nx])}</div>` : ""}
   <div class="row" style="margin-bottom:6px"><button id="nx">Turni della prossima settimana</button></div>
   <h3>La tua settimana</h3><p class="mut" style="margin-top:-4px">${wkLabel(0)}</p>
@@ -96,6 +97,7 @@ async function home() {
 
 // ---- Cruscotto del direttore
 async function dash() {
+  const imp = await importantHtml();
   const a = mondayOf(0), b = addDays(a, 7), now = new Date().toISOString();
   const [{ data: on }, rq, cl, { data: ws }, { data: pe }, { data: nt }] = await Promise.all([
     sb.from("shifts").select("starts_at,ends_at,profiles(first_name,last_name,department_id)").lte("starts_at", now).gt("ends_at", now),
@@ -113,7 +115,7 @@ async function dash() {
   const K = (l, v, sub, k) => `<div class="card kpi" data-go="${k}"><div class="mut">${l}</div><b>${v}</b><div class="mut">${sub}</div></div>`;
   show(`<h2>Buongiorno, ${esc(me.first_name)}</h2><p class="mut" style="margin-top:-4px">${new Date().toLocaleString("it-IT", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</p>
   ${(nt || []).map((n) => `<div class="card" style="border:2px solid var(--r)"><b>Avviso</b><div>${esc(n.body)}</div></div>`).join("")}
-  <div class="kpis">${K("In turno ora", (on || []).length, "persone", "dash")}${K("Richieste aperte", rq.count || 0, "da gestire", "richieste")}${K("Chiusure da convalidare", cl.count || 0, "cassa", "cassa")}${K("Notti scoperte", uncovered, "nessun addetto", "turni")}${K("Oltre il massimo ore", over.length, esc(over.map((p) => p.first_name).join(", ")) || "nessuno", "turni")}</div>
+  ${imp}<div class="kpis">${K("In turno ora", (on || []).length, "persone", "dash")}${K("Richieste aperte", rq.count || 0, "da gestire", "richieste")}${K("Chiusure da convalidare", cl.count || 0, "cassa", "cassa")}${K("Notti scoperte", uncovered, "nessun addetto", "turni")}${K("Oltre il massimo ore", over.length, esc(over.map((p) => p.first_name).join(", ")) || "nessuno", "turni")}</div>
   <h3>Azioni rapide</h3><div class="row"><button data-go="crea-turni">Crea turni</button><button class="alt" data-go="richieste">Richieste</button><button class="alt" data-go="cassa">Chiusure</button><button class="alt" data-go="bot">Chiedi all’assistente</button></div>
   <h3>In turno adesso</h3>${Object.keys(g).map((k) => `<div class="card" style="margin-bottom:8px"><b>${esc(k)}</b><div>${g[k].join(", ")}</div></div>`).join("") || `<p class="mut">Nessuno in turno in questo momento.</p>`}`);
   $("#main").querySelectorAll("[data-go]").forEach((e) => (e.onclick = () => goWeek(e.dataset.go)));
@@ -380,6 +382,36 @@ async function richieste() {
       undook: async () => done(await rpc("decide_undo", { p_req: id, p_ok: true })),
       exc: () => { const v = $("#ex-" + id).value; if (!v) return alert("Scegli la persona di un altro reparto."); ask("Attenzione: eccezione alla regola", `Di norma i cambi turno sono ammessi solo tra colleghi dello stesso reparto. Stai assegnando il turno di ${esc(nm(r.requester))} a ${esc(nm(v))}, di un altro reparto. Confermi l’eccezione?`, "Confermo l’eccezione", async () => done(await rpc("assign_exception", { p_req: id, p_profile: v }))); },
     })[b.dataset.a]();
+  }));
+}
+
+// ---- avvisi importanti (chat): compaiono nella Home di chi fa parte del gruppo scelto
+async function loadDir() { if (!dirP.length) { const { data } = await sb.from("directory").select("id,first_name,last_name,department_id,role"); dirP = data || []; } }
+const whoName = (id) => { const p = dirP.find((x) => x.id === id); return p ? `${p.first_name} ${p.last_name}` : "Direzione"; };
+async function importantList(limit, days) {
+  await loadDir();
+  const since = new Date(Date.now() - days * 864e5).toISOString();
+  const { data } = await sb.from("messages").select("id,body,created_at,author,conversations(title)").eq("important", true).gte("created_at", since).order("created_at", { ascending: false }).limit(limit);
+  return data || [];
+}
+const noticeCard = (n, del) => `<div class="card" style="border:2px solid var(--g)"><div class="row"><b style="flex:1">Avviso importante</b>${del ? `<button class="alt" data-del="${n.id}">Elimina</button>` : ""}</div><div class="mut">${esc(whoName(n.author))} · ${esc(n.conversations?.title || "")} · ${new Date(n.created_at).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div><div style="margin-top:6px;white-space:pre-wrap">${esc(n.body)}</div></div>`;
+async function importantHtml() { return (await importantList(5, 30)).map((n) => noticeCard(n, false)).join(""); }
+async function chatPage() {
+  const [list, { data: cv }] = await Promise.all([importantList(50, 90), sb.from("conversations").select("id,kind,title").order("kind")]);
+  const order = { general: 0, managers: 1, department: 2 }, label = (c) => (c.kind === "general" ? "Tutto il personale (Home di tutti)" : c.kind === "managers" ? "Responsabili e direzione" : c.title);
+  const dest = (cv || []).filter((c) => c.kind !== "direct").sort((x, y) => order[x.kind] - order[y.kind]);
+  show(`<h2>Chat</h2><p class="mut">Per ora la chat serve a inviare avvisi importanti: compaiono nella Home di chi fa parte del gruppo scelto. Le altre funzioni della chat arrivano più avanti.</p>
+  ${isMgr() ? `<div class="card"><b>Nuovo avviso importante</b><label>Chi lo riceve<select id="cd">${dest.map((c) => `<option value="${c.id}">${esc(label(c))}</option>`).join("")}</select></label>
+  <label>Messaggio<textarea id="cb" rows="3" maxlength="500" placeholder="Scrivi l’avviso"></textarea></label><p class="mut">Per arrivare a tutti, scegli «Tutto il personale».</p><button id="cs">Invia avviso</button></div>` : ""}
+  <h3>Avvisi</h3>${list.map((n) => noticeCard(n, n.author === me.id || isTop())).join("") || `<p class="mut">Nessun avviso.</p>`}`);
+  if (isMgr()) $("#cs").onclick = async () => {
+    const body = $("#cb").value.trim(); if (!body) return alert("Scrivi il testo dell’avviso.");
+    const { error } = await sb.from("messages").insert({ conversation_id: $("#cd").value, author: me.id, body, important: true });
+    if (error) return alert(error.message); alert("Avviso inviato."); chatPage();
+  };
+  $("#main").querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => {
+    if (!confirm("Eliminare questo avviso?")) return;
+    const { error } = await sb.from("messages").delete().eq("id", b.dataset.del); if (error) return alert(error.message); chatPage();
   }));
 }
 
