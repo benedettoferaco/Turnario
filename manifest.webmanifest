@@ -1,1 +1,16 @@
-{ "name": "Turnario", "short_name": "Turnario", "start_url": ".", "display": "standalone", "background_color": "#f2f6fb", "theme_color": "#2966a0", "lang": "it" }
+{
+  "name": "Turnario",
+  "short_name": "Turnario",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2966a0",
+  "lang": "it",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
