@@ -256,7 +256,7 @@ function botPage() {
   <div class="row" style="flex-wrap:nowrap"><input id="bi" placeholder="Scrivi qui la tua risposta" style="flex:1" autocomplete="off"><button id="bs">Invia</button></div>
   <button class="alt" id="br" style="margin-top:8px">Ricomincia</button>`);
   $("#main").querySelectorAll("[data-c]").forEach((b) => (b.onclick = () => botIn(b.dataset.c)));
-  $("#bs").onclick = () => botIn($("#bi").value); $("#bi").onkeydown = (e) => e.key === "Enter" && botIn($("#bi").value); $("#br").onclick = () => { botReset(); botPage(); };
+  $("#bs").onclick = () => botIn($("#bi").value); $("#bi").onkeydown = (e) => { if (e.key === "Enter") botIn($("#bi").value); }; $("#br").onclick = () => { botReset(); botPage(); };
   const m = $(".msgs"); if (m) m.scrollTop = m.scrollHeight;
 }
 async function botIn(t) {
@@ -413,7 +413,7 @@ async function codici() {
   }));
 }
 
-$("#go").onclick = login; $("#code").onkeydown = (e) => e.key === "Enter" && login();
+$("#go").onclick = login; $("#code").onkeydown = (e) => { if (e.key === "Enter") login(); };
 $("#out").onclick = async () => { await sb.auth.signOut(); me = null; document.body.classList.remove("dir"); boot(); };
 const wide = () => window.matchMedia("(min-width:900px)").matches;
 $("#menu").onclick = () => {
@@ -428,5 +428,3 @@ try { if (localStorage.getItem("side") === "0") document.body.classList.add("col
 const tick = () => { if (!me) return; const k = iso(mondayOf(0)); if (k !== curWeek) { curWeek = k; wk = 0; go(tab); } };
 setInterval(tick, 60000); document.addEventListener("visibilitychange", tick);
 boot();
-
-
