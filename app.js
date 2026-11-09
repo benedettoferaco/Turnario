@@ -53,7 +53,7 @@ async function boot() {
 }
 
 // ---- navigazione: barra laterale per direttore e account tecnico, barra in basso per gli altri
-const SIDE = [["dash", "Cruscotto"], ["richieste", "Richieste e cambi turno"], ["cassa", "Chiusure di cassa"], ["bot", "Assistente turni"], ["chat", "Chat"], ["team", "Team"], ["crea", "Creazione profilo"], ["codici", "Profili e codici"], ["profilo", "Profilo"]];
+const SIDE = [["dash", "Cruscotto"], ["richieste", "Richieste e cambi turno"], ["cassa", "Chiusure di cassa"], ["bot", "Assistente turni"], ["chat", "Chat"], ["pause", "Pause"], ["team", "Team"], ["crea", "Creazione profilo"], ["codici", "Profili e codici"], ["profilo", "Profilo"]];
 async function badges() {
   const [r, c] = await Promise.all([sb.from("requests").select("id", { count: "exact", head: true }).in("status", ["open", "agreed"]), sb.from("cash_closings").select("id", { count: "exact", head: true }).eq("status", "pending")]);
   [["richieste", r.count], ["cassa", c.count]].forEach(([k, n]) => { const e = $("#b-" + k); if (e) { e.textContent = n || 0; e.hidden = !n; } });
@@ -65,18 +65,18 @@ function sideItems() {
   return [["home", "Home"], ...(isMgr() ? [["turni", "Turni"], ["bot", "Assistente turni"]] : []), ["richieste", "Richieste e cambi turno"], ...(casse ? [["cassa", me.role === "manager" ? "Chiusure di cassa" : "Cassa"]] : []), ["chat", "Chat"], ["team", "Team"], ["profilo", "Profilo"]];
 }
 function go(t) {
-  tab = t; document.body.classList.remove("open");
+  tab = t; document.body.classList.remove("open"); clearInterval(brkTimer);
   $("#side").innerHTML = `<div class="row" style="flex-wrap:nowrap;margin-bottom:12px"><span class="av">${esc(ini(me))}</span><div><b>${esc(me.first_name)} ${esc(me.last_name)}</b><div class="mut">${RN[me.role]}</div></div></div>` +
     (isMgr() ? `<button class="btn" style="width:100%;margin-bottom:10px" data-t="crea-turni">+ Crea turni</button>` : "") +
     sideItems().map(([k, l]) => `<button class="si ${k === tab ? "on" : ""}" data-t="${k}"><span>${l}</span><span class="tag" id="b-${k}" hidden></span></button>`).join("");
   $("#side").querySelectorAll("button").forEach((b) => (b.onclick = () => goWeek(b.dataset.t)));
   if (isTop()) badges();
-  ({ home, dash, turni, team, crea, codici, profilo, richieste, cassa: () => soon("Chiusure di cassa"), bot: botPage, chat: chatPage })[tab]();
+  ({ home, dash, turni, team, crea, codici, profilo, richieste, cassa: () => soon("Chiusure di cassa"), bot: botPage, chat: chatPage, pause: pausePage })[tab]();
 }
 
 // ---- Home (addetti e responsabili)
 async function home() {
-  const imp = await importantHtml();
+  const imp = await importantHtml(), dt = await dutyHtml(), pz = await pauseCard();
   const a = mondayOf(0), b = addDays(a, 7), ti = (new Date().getDay() + 6) % 7;
   const [{ data: sh }, { data: nt }] = await Promise.all([
     sb.from("shifts").select("*").eq("profile_id", me.id).gte("starts_at", a.toISOString()).lt("starts_at", b.toISOString()).order("starts_at"),
@@ -86,18 +86,18 @@ async function home() {
   const t = by[ti], nx = [...Array(7).keys()].find((i) => i > ti && by[i]);
   show(`<div class="row" style="flex-wrap:nowrap;margin:6px 0 10px"><span class="av">${esc(ini(me))}</span><h2 style="margin:0">Ciao ${esc(me.first_name)}</h2></div>
   ${(nt || []).map((n) => `<div class="card" style="border:2px solid var(--r)"><b>Avviso per te</b><div style="margin-top:6px">${esc(n.body)}</div><button class="alt" data-n="${n.id}" style="margin-top:8px">Ho letto</button></div>`).join("")}
-  ${imp}<div class="card" style="background:var(--${t ? (cls(t) === "P" ? "p" : "m") : "rest"});border-color:transparent"><div class="mut">Oggi, ${longDay(new Date())}</div><div style="font-size:44px;font-weight:800;line-height:1.1">${t ? hh(t) : "Riposo"}</div><div>${t ? part(t) : "Giornata libera"} · ${esc(depOf(me).name || "")}</div></div>
+  ${imp}${dt}<div class="card" style="background:var(--${t ? (cls(t) === "P" ? "p" : "m") : "rest"});border-color:transparent"><div class="mut">Oggi, ${longDay(new Date())}</div><div style="font-size:44px;font-weight:800;line-height:1.1">${t ? hh(t) : "Riposo"}</div><div>${t ? part(t) : "Giornata libera"} · ${esc(depOf(me).name || "")}</div></div>
   ${nx !== undefined ? `<div class="card"><div class="mut">Prossimo turno</div><b>${DN[nx]} ${addDays(a, nx).getDate()}</b> · ${part(by[nx])} ${hh(by[nx])}</div>` : ""}
-  <div class="row" style="margin-bottom:6px"><button id="nx">Turni della prossima settimana</button></div>
+  ${pz}<div class="row" style="margin-bottom:6px"><button id="nx">Turni della prossima settimana</button></div>
   <h3>La tua settimana</h3><p class="mut" style="margin-top:-4px">${wkLabel(0)}</p>
   ${DN.map((d, i) => `<div class="row card" style="padding:10px;${i === ti ? "border-color:var(--g);border-width:2.5px;" : ""}${i < ti ? "opacity:.55" : ""}"><div style="width:64px"><b>${d}</b><div class="mut">${addDays(a, i).getDate()}</div></div><span class="s ${cls(by[i])}" style="flex:1;padding:10px;font-size:15px;display:block;text-align:center">${by[i] ? part(by[i]) + " " + hh(by[i]) : "Riposo"}</span></div>`).join("")}`);
-  $("#nx").onclick = nextView;
+  $("#nx").onclick = nextView; wirePause();
   $("#main").querySelectorAll("[data-n]").forEach((b) => (b.onclick = async () => { await sb.from("notices").update({ read_at: new Date().toISOString() }).eq("id", b.dataset.n); home(); }));
 }
 
 // ---- Cruscotto del direttore
 async function dash() {
-  const imp = await importantHtml();
+  const imp = await importantHtml(), dt = await dutyHtml(), pz = await pauseCard();
   const a = mondayOf(0), b = addDays(a, 7), now = new Date().toISOString();
   const [{ data: on }, rq, cl, { data: ws }, { data: pe }, { data: nt }] = await Promise.all([
     sb.from("shifts").select("starts_at,ends_at,profiles(first_name,last_name,department_id)").lte("starts_at", now).gt("ends_at", now),
@@ -115,10 +115,11 @@ async function dash() {
   const K = (l, v, sub, k) => `<div class="card kpi" data-go="${k}"><div class="mut">${l}</div><b>${v}</b><div class="mut">${sub}</div></div>`;
   show(`<h2>Buongiorno, ${esc(me.first_name)}</h2><p class="mut" style="margin-top:-4px">${new Date().toLocaleString("it-IT", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</p>
   ${(nt || []).map((n) => `<div class="card" style="border:2px solid var(--r)"><b>Avviso</b><div>${esc(n.body)}</div></div>`).join("")}
-  ${imp}<div class="kpis">${K("In turno ora", (on || []).length, "persone", "dash")}${K("Richieste aperte", rq.count || 0, "da gestire", "richieste")}${K("Chiusure da convalidare", cl.count || 0, "cassa", "cassa")}${K("Notti scoperte", uncovered, "nessun addetto", "turni")}${K("Oltre il massimo ore", over.length, esc(over.map((p) => p.first_name).join(", ")) || "nessuno", "turni")}</div>
+  ${imp}${dt}${pz}<div class="kpis">${K("In turno ora", (on || []).length, "persone", "dash")}${K("Richieste aperte", rq.count || 0, "da gestire", "richieste")}${K("Chiusure da convalidare", cl.count || 0, "cassa", "cassa")}${K("Notti scoperte", uncovered, "nessun addetto", "turni")}${K("Oltre il massimo ore", over.length, esc(over.map((p) => p.first_name).join(", ")) || "nessuno", "turni")}</div>
   <h3>Azioni rapide</h3><div class="row"><button data-go="crea-turni">Crea turni</button><button class="alt" data-go="richieste">Richieste</button><button class="alt" data-go="cassa">Chiusure</button><button class="alt" data-go="bot">Chiedi all’assistente</button></div>
   <h3>In turno adesso</h3>${Object.keys(g).map((k) => `<div class="card" style="margin-bottom:8px"><b>${esc(k)}</b><div>${g[k].join(", ")}</div></div>`).join("") || `<p class="mut">Nessuno in turno in questo momento.</p>`}`);
   $("#main").querySelectorAll("[data-go]").forEach((e) => (e.onclick = () => goWeek(e.dataset.go)));
+  wirePause();
 }
 
 // ---- Profilo
@@ -150,13 +151,15 @@ const len2 = (c) => (c.e > c.s ? c.e - c.s : c.e + 24 - c.s);
 const BR = [["6-14", { s: 6, e: 14 }], ["14-22", { s: 14, e: 22 }], ["22-6", { s: 22, e: 6 }], ["R", "R"]];
 async function loadWeek() {
   const a = mondayOf(wk), b = addDays(a, 7); plan = {};
-  const [{ data: sh }, { data: pe }, { data: wp }] = await Promise.all([
+  const [{ data: sh }, { data: pe }, { data: wp }, { data: du }] = await Promise.all([
     sb.from("shifts").select("*").gte("starts_at", a.toISOString()).lt("starts_at", b.toISOString()),
     sb.from("profiles").select("id,first_name,last_name,department_id,role,contract_hours").eq("active", true).neq("role", "admin"),
     sb.from("week_plans").select("department_id").eq("week_start", iso(a)),
+    sb.from("duties").select("*").eq("kind", "bagni").gte("duty_date", iso(a)).lt("duty_date", iso(b)),
   ]);
   people = (pe || []).sort((x, y) => x.department_id - y.department_id || x.last_name.localeCompare(y.last_name));
   (sh || []).forEach((s) => { const i = dayIdx(s, wk); ((plan[s.profile_id] ||= {})[i] ||= { ...toHours(s), ids: [] }).ids.push(s.id); });
+  (du || []).forEach((d) => { const i = Math.round((new Date(d.duty_date + "T00:00") - a) / 864e5); if (plan[d.profile_id]?.[i]) plan[d.profile_id][i].b = d.hour; });
   return (wp || []).length > 0;
 }
 async function turni() {
@@ -188,7 +191,7 @@ function grid() {
   const a = mondayOf(wk), nightP = people.filter((p) => depOf(p).is_night);
   $("#grid").innerHTML = `<tr><th>Persona</th>${DN.map((d, i) => `<th>${d}<br><span class="mut">${addDays(a, i).getDate()}</span></th>`).join("")}<th>Ore</th></tr>` +
     people.map((p) => { const h = rowH(p.id); return `<tr><td><b class="nm" data-r="${p.id}" style="cursor:pointer">${esc(p.first_name)} ${esc(p.last_name)}</b><div class="mut">${esc(depOf(p).name)}</div></td>${DN.map((_, i) => { const c = cur(p.id, i), ch = (p.id + "|" + i) in edits;
-      return `<td><button class="s can ${cls(c)} ${ch ? "chg" : ""}" data-p="${p.id}" data-i="${i}">${c === "R" ? "Riposo" : c ? hh(c) : "—"}</button></td>`; }).join("")}<td style="${h > p.contract_hours ? "color:var(--r);font-weight:800" : ""}">${h}/${p.contract_hours}</td></tr>`; }).join("") +
+      return `<td><button class="s can ${cls(c)} ${ch ? "chg" : ""}" data-p="${p.id}" data-i="${i}">${c === "R" ? "Riposo" : c ? hh(c) + (c.b != null ? `<div style="font-size:10px;font-weight:400">bagni ${c.b}</div>` : "") : "—"}</button></td>`; }).join("")}<td style="${h > p.contract_hours ? "color:var(--r);font-weight:800" : ""}">${h}/${p.contract_hours}</td></tr>`; }).join("") +
     (nightP.length ? `<tr><td><b>Notte (1–2)</b></td>${DN.map((_, i) => { const n = nightP.filter((p) => cls(cur(p.id, i)) === "N").length; return `<td style="${n < 1 ? "color:var(--r);font-weight:800" : ""}">${n}</td>`; }).join("")}<td></td></tr>` : "");
   $("#grid").querySelectorAll(".s").forEach((b) => (b.onclick = () => cellTap(b.dataset.p, +b.dataset.i)));
   $("#grid").querySelectorAll(".nm").forEach((b) => (b.onclick = () => fillRow(b.dataset.r)));
@@ -210,35 +213,41 @@ async function copyPrev() {
 }
 function clearAll() { if (!confirm("Mettere tutti in riposo per questa settimana?")) return; pushHist(); people.forEach((p) => { for (let i = 0; i < 7; i++) edits[p.id + "|" + i] = "R"; }); grid(); }
 function openCell(pid, i) {
-  const p = people.find((x) => x.id === pid), night = !!depOf(p).is_night, c = cur(pid, i), v = c && c !== "R" ? c : { s: 6, e: 14 };
+  const p = people.find((x) => x.id === pid), night = !!depOf(p).is_night, casse = depOf(p).name === "Casse", c = cur(pid, i), v = c && c !== "R" ? c : { s: 6, e: 14 };
   const opts = (lo, hi, sel) => { let o = ""; for (let h = lo; h <= hi; h++) o += `<option value="${h}" ${h === sel ? "selected" : ""}>${h}</option>`; return o; };
   const pre = [[6, 14], [14, 22], ...(night ? [[22, 6]] : [])];
   $("#dlg").innerHTML = `<b>${esc(p.first_name)} ${esc(p.last_name)}</b><div class="mut">${DN[i]} ${addDays(mondayOf(wk), i).getDate()}</div>
   <div class="row" style="margin:10px 0">${pre.map(([s, e]) => `<button class="alt" data-s="${s}" data-e="${e}">${s}–${e}</button>`).join("")}</div>
   <div class="row"><label style="flex:1">Dalle ore<select id="hs">${opts(0, 23, v.s)}</select></label><label style="flex:1">Alle ore<select id="he">${opts(1, night ? 24 : 22, Math.min(v.e, night ? 24 : 22))}</select></label></div>
+  ${casse ? `<label>Pulizia bagni (ora, durante il turno)<select id="hb"><option value="">Nessuna</option>${opts(6, 21, v.b ?? -1)}</select></label>` : ""}
   <p class="mut">${night ? "Reparto Notte: si può lavorare di notte." : "Fuori dal reparto Notte i turni finiscono entro le 22."}</p>
   <div class="row"><button id="ok">Imposta</button><button class="alt" id="rest">Riposo</button><button class="alt" id="no">Annulla</button></div>`;
-  const set = (val) => { pushHist(); if (applyCell(pid, i, val)) { $("#dlg").close(); grid(); } };
-  $("#dlg").querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => set({ s: +b.dataset.s, e: +b.dataset.e })));
-  $("#ok").onclick = () => { const s = +$("#hs").value, e = +$("#he").value; if (e <= s && !night) return alert("L’ora di fine deve essere dopo quella di inizio."); set({ s, e }); };
+  const bv = () => { const e = $("#hb"); return e && e.value !== "" ? { b: +e.value } : {}; };
+  const set = (val) => { if (val !== "R" && val.b != null && !(val.b >= val.s && val.b < (val.e > val.s ? val.e : 24))) return alert("La pulizia dei bagni deve cadere durante il turno."); pushHist(); if (applyCell(pid, i, val)) { $("#dlg").close(); grid(); } };
+  $("#dlg").querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => set({ s: +b.dataset.s, e: +b.dataset.e, ...bv() })));
+  $("#ok").onclick = () => { const s = +$("#hs").value, e = +$("#he").value; if (e <= s && !night) return alert("L’ora di fine deve essere dopo quella di inizio."); set({ s, e, ...bv() }); };
   $("#rest").onclick = () => set("R"); $("#no").onclick = () => $("#dlg").close();
   $("#dlg").showModal();
 }
 async function saveWeek() {
   const mon = mondayOf(wk), errs = [], depsDone = new Set();
   for (const k of Object.keys(edits)) {
-    const [pid, di] = k.split("|"), v = edits[k], c = plan[pid]?.[di], p = people.find((x) => x.id === pid);
+    const [pid, di] = k.split("|"), v = edits[k], c = plan[pid]?.[di], p = people.find((x) => x.id === pid), d = addDays(mon, +di);
     if (c?.ids?.length) { const r = await sb.from("shifts").delete().in("id", c.ids); if (r.error) { errs.push(r.error.message); continue; } }
+    await sb.from("duties").delete().eq("profile_id", pid).eq("duty_date", iso(d)).eq("kind", "bagni");
     if (v !== "R") {
-      const d = addDays(mon, +di), st = new Date(d); st.setHours(v.s, 0, 0, 0);
+      const st = new Date(d); st.setHours(v.s, 0, 0, 0);
       const en = new Date(v.e > v.s ? d : addDays(d, 1)); en.setHours(v.e, 0, 0, 0);
       const r = await sb.from("shifts").insert({ profile_id: pid, starts_at: st.toISOString(), ends_at: en.toISOString(), created_by: me.id });
-      if (r.error) errs.push(`${p.first_name} ${DN[di]}: ${r.error.message}`); else depsDone.add(p.department_id);
+      if (r.error) errs.push(`${p.first_name} ${DN[di]}: ${r.error.message}`); else {
+        depsDone.add(p.department_id);
+        if (v.b != null) { const r2 = await sb.from("duties").insert({ profile_id: pid, duty_date: iso(d), hour: v.b, kind: "bagni", created_by: me.id }); if (r2.error) errs.push(`Pulizia bagni di ${p.first_name} ${DN[di]}: ${r2.error.message}`); }
+      }
     }
   }
   Object.keys(plan).forEach((pid) => { const p = people.find((x) => x.id === pid); if (p) depsDone.add(p.department_id); });
   if (depsDone.size) await sb.from("week_plans").upsert([...depsDone].map((d) => ({ week_start: iso(mon), department_id: d, created_by: me.id })), { onConflict: "week_start,department_id" });
-  alert(errs.length ? "Alcuni turni non sono stati salvati:\n" + errs.join("\n") : "Turni salvati.");
+  alert(errs.length ? "Alcuni dati non sono stati salvati:\n" + errs.join("\n") : "Turni salvati.");
   turni();
 }
 
@@ -413,6 +422,43 @@ async function chatPage() {
     if (!confirm("Eliminare questo avviso?")) return;
     const { error } = await sb.from("messages").delete().eq("id", b.dataset.del); if (error) return alert(error.message); chatPage();
   }));
+}
+
+// ---- pulizia bagni (negli avvisi importanti) e pause con cronometro
+let brk = null, brkTimer = null;
+const fmtDur = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ":" : "") + String(m).padStart(2, "0") + ":" + String(x).padStart(2, "0"); };
+async function dutyHtml() {
+  await loadDir();
+  const t = iso(new Date()), u = iso(addDays(new Date(), 2));
+  const { data } = await sb.from("duties").select("*").eq("kind", "bagni").gte("duty_date", t).lte("duty_date", u).order("duty_date").order("hour");
+  return (data || []).map((d) => { const mine = d.profile_id === me.id, when = d.duty_date === t ? "oggi" : d.duty_date === iso(addDays(new Date(), 1)) ? "domani" : new Date(d.duty_date + "T00:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric" });
+    return `<div class="card" style="border:2px solid var(--g)"><div class="row"><b style="flex:1">Pulizia bagni</b>${mine ? `<span class="tag">Tocca a te</span>` : ""}</div><div>${esc(whoName(d.profile_id))} · ${when} alle ore ${d.hour}</div></div>`; }).join("");
+}
+async function pauseCard() {
+  if (me.role === "admin") return "";
+  const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+  const { data } = await sb.from("breaks").select("*").eq("profile_id", me.id).gte("started_at", t0.toISOString()).order("started_at");
+  const all = data || []; brk = all.find((b) => !b.ended_at) || null;
+  const done = all.filter((b) => b.ended_at), tot = done.reduce((a, b) => a + (new Date(b.ended_at) - new Date(b.started_at)), 0);
+  return `<div class="card"><b>Pausa</b>${brk ? `<div id="cr" style="font-size:44px;font-weight:800;line-height:1.2">${fmtDur(Date.now() - new Date(brk.started_at))}</div><div class="mut">Iniziata alle ${new Date(brk.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</div><button id="pe" style="margin-top:8px">Fine pausa</button>`
+    : `<div class="mut" style="margin:4px 0 8px">Pause di oggi: ${done.length} · totale ${fmtDur(tot)}</div><button id="pb">Inizio pausa</button>`}</div>`;
+}
+function wirePause() {
+  const b = $("#pb"), e = $("#pe");
+  if (b) b.onclick = async () => { b.disabled = true; if (await rpc("start_break")) go(tab); else b.disabled = false; };
+  if (e) e.onclick = async () => { e.disabled = true; if (await rpc("end_break")) go(tab); else e.disabled = false; };
+  clearInterval(brkTimer);
+  if (brk) brkTimer = setInterval(() => { const c = $("#cr"); if (c) c.textContent = fmtDur(Date.now() - new Date(brk.started_at)); }, 1000);
+}
+async function pausePage(dateStr) {
+  await loadDir();
+  const d0 = dateStr ? new Date(dateStr + "T00:00") : new Date(); d0.setHours(0, 0, 0, 0); const d1 = addDays(d0, 1);
+  const { data } = await sb.from("breaks").select("*").gte("started_at", d0.toISOString()).lt("started_at", d1.toISOString()).order("started_at");
+  const by = {}; (data || []).forEach((b) => (by[b.profile_id] ||= []).push(b));
+  const tm = (x) => new Date(x).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }), dur = (b) => (b.ended_at ? new Date(b.ended_at) : new Date()) - new Date(b.started_at);
+  show(`<h2>Pause</h2><label>Giorno<input id="pd" type="date" value="${iso(d0)}"></label>
+  ${Object.keys(by).map((pid) => `<div class="card"><div class="row"><b style="flex:1">${esc(whoName(pid))}</b><span class="tag ok">Totale ${fmtDur(by[pid].reduce((a, b) => a + dur(b), 0))}</span></div>${by[pid].map((b) => `<div class="row" style="justify-content:space-between"><span>${tm(b.started_at)} – ${b.ended_at ? tm(b.ended_at) : "in corso"}</span><b>${fmtDur(dur(b))}</b></div>`).join("")}</div>`).join("") || `<p class="mut" style="margin-top:12px">Nessuna pausa registrata.</p>`}`);
+  $("#pd").onchange = () => pausePage($("#pd").value);
 }
 
 // ---- team, profili, codici
