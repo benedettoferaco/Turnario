@@ -53,7 +53,7 @@ async function boot() {
 }
 
 // ---- navigazione: barra laterale per direttore e account tecnico, barra in basso per gli altri
-const SIDE = [["dash", "Cruscotto"], ["richieste", "Richieste e cambi turno"], ["cassa", "Chiusure di cassa"], ["bot", "Assistente turni"], ["chat", "Chat"], ["pause", "Pause"], ["team", "Team"], ["crea", "Creazione profilo"], ["codici", "Profili e codici"], ["profilo", "Profilo"]];
+const SIDE = [["dash", "Cruscotto"], ["richieste", "Richieste e cambi turno"], ["cassa", "Chiusure di cassa"], ["bot", "Assistente turni"], ["chat", "Chat"], ["bagni", "Pulizia bagni"], ["pause", "Pause"], ["team", "Team"], ["crea", "Creazione profilo"], ["codici", "Profili e codici"], ["profilo", "Profilo"]];
 async function badges() {
   const [r, c] = await Promise.all([sb.from("requests").select("id", { count: "exact", head: true }).in("status", ["open", "agreed"]), sb.from("cash_closings").select("id", { count: "exact", head: true }).eq("status", "pending")]);
   [["richieste", r.count], ["cassa", c.count]].forEach(([k, n]) => { const e = $("#b-" + k); if (e) { e.textContent = n || 0; e.hidden = !n; } });
@@ -62,7 +62,7 @@ const goWeek = (e) => (e === "crea-turni" ? (wk = 1, go("turni")) : go(e));
 function sideItems() {
   if (isTop()) return SIDE;
   const casse = depOf(me).name === "Casse";
-  return [["home", "Home"], ...(isMgr() ? [["turni", "Turni"], ["bot", "Assistente turni"]] : []), ["richieste", "Richieste e cambi turno"], ...(casse ? [["cassa", me.role === "manager" ? "Chiusure di cassa" : "Cassa"]] : []), ["chat", "Chat"], ["team", "Team"], ["profilo", "Profilo"]];
+  return [["home", "Home"], ...(isMgr() ? [["turni", "Turni"], ["bot", "Assistente turni"]] : []), ["richieste", "Richieste e cambi turno"], ...(casse ? [["cassa", me.role === "manager" ? "Chiusure di cassa" : "Cassa"]] : []), ...(casse && me.role === "manager" ? [["bagni", "Pulizia bagni"]] : []), ["chat", "Chat"], ["team", "Team"], ["profilo", "Profilo"]];
 }
 function go(t) {
   tab = t; document.body.classList.remove("open"); clearInterval(brkTimer);
@@ -71,7 +71,7 @@ function go(t) {
     sideItems().map(([k, l]) => `<button class="si ${k === tab ? "on" : ""}" data-t="${k}"><span>${l}</span><span class="tag" id="b-${k}" hidden></span></button>`).join("");
   $("#side").querySelectorAll("button").forEach((b) => (b.onclick = () => goWeek(b.dataset.t)));
   if (isTop()) badges();
-  ({ home, dash, turni, team, crea, codici, profilo, richieste, cassa: () => soon("Chiusure di cassa"), bot: botPage, chat: chatPage, pause: pausePage })[tab]();
+  ({ home, dash, turni, team, crea, codici, profilo, richieste, cassa: () => soon("Chiusure di cassa"), bot: botPage, chat: chatPage, pause: pausePage, bagni: bagniPage })[tab]();
 }
 
 // ---- Home (addetti e responsabili)
@@ -159,7 +159,7 @@ async function loadWeek() {
   ]);
   people = (pe || []).sort((x, y) => x.department_id - y.department_id || x.last_name.localeCompare(y.last_name));
   (sh || []).forEach((s) => { const i = dayIdx(s, wk); ((plan[s.profile_id] ||= {})[i] ||= { ...toHours(s), ids: [] }).ids.push(s.id); });
-  (du || []).forEach((d) => { const i = Math.round((new Date(d.duty_date + "T00:00") - a) / 864e5); if (plan[d.profile_id]?.[i]) plan[d.profile_id][i].b = d.hour; });
+  (du || []).forEach((d) => { const i = Math.round((new Date(d.duty_date + "T00:00") - a) / 864e5); if (plan[d.profile_id]?.[i]) plan[d.profile_id][i].b = 1; });
   return (wp || []).length > 0;
 }
 async function turni() {
@@ -191,14 +191,15 @@ function grid() {
   const a = mondayOf(wk), nightP = people.filter((p) => depOf(p).is_night);
   $("#grid").innerHTML = `<tr><th>Persona</th>${DN.map((d, i) => `<th>${d}<br><span class="mut">${addDays(a, i).getDate()}</span></th>`).join("")}<th>Ore</th></tr>` +
     people.map((p) => { const h = rowH(p.id); return `<tr><td><b class="nm" data-r="${p.id}" style="cursor:pointer">${esc(p.first_name)} ${esc(p.last_name)}</b><div class="mut">${esc(depOf(p).name)}</div></td>${DN.map((_, i) => { const c = cur(p.id, i), ch = (p.id + "|" + i) in edits;
-      return `<td><button class="s can ${cls(c)} ${ch ? "chg" : ""}" data-p="${p.id}" data-i="${i}">${c === "R" ? "Riposo" : c ? hh(c) + (c.b != null ? `<div style="font-size:10px;font-weight:400">bagni ${c.b}</div>` : "") : "—"}</button></td>`; }).join("")}<td style="${h > p.contract_hours ? "color:var(--r);font-weight:800" : ""}">${h}/${p.contract_hours}</td></tr>`; }).join("") +
+      return `<td><button class="s can ${cls(c)} ${ch ? "chg" : ""}" data-p="${p.id}" data-i="${i}">${c === "R" ? "Riposo" : c ? hh(c) + (c.b ? `<div style="font-size:10px;font-weight:400">bagni</div>` : "") : "—"}</button></td>`; }).join("")}<td style="${h > p.contract_hours ? "color:var(--r);font-weight:800" : ""}">${h}/${p.contract_hours}</td></tr>`; }).join("") +
     (nightP.length ? `<tr><td><b>Notte (1–2)</b></td>${DN.map((_, i) => { const n = nightP.filter((p) => cls(cur(p.id, i)) === "N").length; return `<td style="${n < 1 ? "color:var(--r);font-weight:800" : ""}">${n}</td>`; }).join("")}<td></td></tr>` : "");
   $("#grid").querySelectorAll(".s").forEach((b) => (b.onclick = () => cellTap(b.dataset.p, +b.dataset.i)));
   $("#grid").querySelectorAll(".nm").forEach((b) => (b.onclick = () => fillRow(b.dataset.r)));
 }
 function cellTap(pid, i) {
   if (brush === null) return openCell(pid, i);
-  pushHist(); applyCell(pid, i, BR.find(([k]) => k === brush)[1]); grid();
+  const c = cur(pid, i), v = BR.find(([k]) => k === brush)[1];
+  pushHist(); applyCell(pid, i, v !== "R" && c && c.b ? { ...v, b: 1 } : v); grid();
 }
 function fillRow(pid) {
   if (brush === null) return alert("Scegli prima un orario in alto: verrà messo su tutta la riga.");
@@ -219,11 +220,11 @@ function openCell(pid, i) {
   $("#dlg").innerHTML = `<b>${esc(p.first_name)} ${esc(p.last_name)}</b><div class="mut">${DN[i]} ${addDays(mondayOf(wk), i).getDate()}</div>
   <div class="row" style="margin:10px 0">${pre.map(([s, e]) => `<button class="alt" data-s="${s}" data-e="${e}">${s}–${e}</button>`).join("")}</div>
   <div class="row"><label style="flex:1">Dalle ore<select id="hs">${opts(0, 23, v.s)}</select></label><label style="flex:1">Alle ore<select id="he">${opts(1, night ? 24 : 22, Math.min(v.e, night ? 24 : 22))}</select></label></div>
-  ${casse ? `<label>Pulizia bagni (ora, durante il turno)<select id="hb"><option value="">Nessuna</option>${opts(6, 21, v.b ?? -1)}</select></label>` : ""}
+  ${casse ? `<label class="row" style="flex-wrap:nowrap;margin-top:10px"><input type="checkbox" id="hb" style="width:auto" ${v.b ? "checked" : ""}> Pulizia bagni in questo turno</label>` : ""}
   <p class="mut">${night ? "Reparto Notte: si può lavorare di notte." : "Fuori dal reparto Notte i turni finiscono entro le 22."}</p>
   <div class="row"><button id="ok">Imposta</button><button class="alt" id="rest">Riposo</button><button class="alt" id="no">Annulla</button></div>`;
-  const bv = () => { const e = $("#hb"); return e && e.value !== "" ? { b: +e.value } : {}; };
-  const set = (val) => { if (val !== "R" && val.b != null && !(val.b >= val.s && val.b < (val.e > val.s ? val.e : 24))) return alert("La pulizia dei bagni deve cadere durante il turno."); pushHist(); if (applyCell(pid, i, val)) { $("#dlg").close(); grid(); } };
+  const bv = () => { const e = $("#hb"); return e && e.checked ? { b: 1 } : {}; };
+  const set = (val) => { pushHist(); if (applyCell(pid, i, val)) { $("#dlg").close(); grid(); } };
   $("#dlg").querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => set({ s: +b.dataset.s, e: +b.dataset.e, ...bv() })));
   $("#ok").onclick = () => { const s = +$("#hs").value, e = +$("#he").value; if (e <= s && !night) return alert("L’ora di fine deve essere dopo quella di inizio."); set({ s, e, ...bv() }); };
   $("#rest").onclick = () => set("R"); $("#no").onclick = () => $("#dlg").close();
@@ -241,7 +242,7 @@ async function saveWeek() {
       const r = await sb.from("shifts").insert({ profile_id: pid, starts_at: st.toISOString(), ends_at: en.toISOString(), created_by: me.id });
       if (r.error) errs.push(`${p.first_name} ${DN[di]}: ${r.error.message}`); else {
         depsDone.add(p.department_id);
-        if (v.b != null) { const r2 = await sb.from("duties").insert({ profile_id: pid, duty_date: iso(d), hour: v.b, kind: "bagni", created_by: me.id }); if (r2.error) errs.push(`Pulizia bagni di ${p.first_name} ${DN[di]}: ${r2.error.message}`); }
+        if (v.b) { const r2 = await sb.from("duties").insert({ profile_id: pid, duty_date: iso(d), kind: "bagni", created_by: me.id }); if (r2.error) errs.push(`Pulizia bagni di ${p.first_name} ${DN[di]}: ${r2.error.message}`); }
       }
     }
   }
@@ -428,11 +429,8 @@ async function chatPage() {
 let brk = null, brkTimer = null;
 const fmtDur = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ":" : "") + String(m).padStart(2, "0") + ":" + String(x).padStart(2, "0"); };
 async function dutyHtml() {
-  await loadDir();
-  const t = iso(new Date()), u = iso(addDays(new Date(), 2));
-  const { data } = await sb.from("duties").select("*").eq("kind", "bagni").gte("duty_date", t).lte("duty_date", u).order("duty_date").order("hour");
-  return (data || []).map((d) => { const mine = d.profile_id === me.id, when = d.duty_date === t ? "oggi" : d.duty_date === iso(addDays(new Date(), 1)) ? "domani" : new Date(d.duty_date + "T00:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric" });
-    return `<div class="card" style="border:2px solid var(--g)"><div class="row"><b style="flex:1">Pulizia bagni</b>${mine ? `<span class="tag">Tocca a te</span>` : ""}</div><div>${esc(whoName(d.profile_id))} · ${when} alle ore ${d.hour}</div></div>`; }).join("");
+  const { data } = await sb.from("duties").select("id").eq("kind", "bagni").eq("profile_id", me.id).eq("duty_date", iso(new Date())).limit(1);
+  return (data || []).length ? `<div class="card" style="border:2px solid var(--g)"><div class="row"><b style="flex:1">Avviso importante · Pulizia bagni</b><span class="tag">Tocca a te</span></div><div style="margin-top:6px">Oggi nel tuo turno hai la pulizia dei bagni.</div></div>` : "";
 }
 async function pauseCard() {
   if (me.role === "admin") return "";
@@ -450,15 +448,39 @@ function wirePause() {
   clearInterval(brkTimer);
   if (brk) brkTimer = setInterval(() => { const c = $("#cr"); if (c) c.textContent = fmtDur(Date.now() - new Date(brk.started_at)); }, 1000);
 }
-async function pausePage(dateStr) {
+let pp = "day", ppDay = "", bw = 0;
+async function pausePage() {
   await loadDir();
-  const d0 = dateStr ? new Date(dateStr + "T00:00") : new Date(); d0.setHours(0, 0, 0, 0); const d1 = addDays(d0, 1);
-  const { data } = await sb.from("breaks").select("*").gte("started_at", d0.toISOString()).lt("started_at", d1.toISOString()).order("started_at");
-  const by = {}; (data || []).forEach((b) => (by[b.profile_id] ||= []).push(b));
-  const tm = (x) => new Date(x).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }), dur = (b) => (b.ended_at ? new Date(b.ended_at) : new Date()) - new Date(b.started_at);
-  show(`<h2>Pause</h2><label>Giorno<input id="pd" type="date" value="${iso(d0)}"></label>
-  ${Object.keys(by).map((pid) => `<div class="card"><div class="row"><b style="flex:1">${esc(whoName(pid))}</b><span class="tag ok">Totale ${fmtDur(by[pid].reduce((a, b) => a + dur(b), 0))}</span></div>${by[pid].map((b) => `<div class="row" style="justify-content:space-between"><span>${tm(b.started_at)} – ${b.ended_at ? tm(b.ended_at) : "in corso"}</span><b>${fmtDur(dur(b))}</b></div>`).join("")}</div>`).join("") || `<p class="mut" style="margin-top:12px">Nessuna pausa registrata.</p>`}`);
-  $("#pd").onchange = () => pausePage($("#pd").value);
+  const today = new Date(); today.setHours(0, 0, 0, 0); let s, e;
+  if (pp === "day") { s = ppDay ? new Date(ppDay + "T00:00") : today; e = addDays(s, 1); } else if (pp === "week") { s = mondayOf(0); e = addDays(s, 7); } else { s = addDays(today, -29); e = addDays(today, 1); }
+  const { data } = await sb.from("breaks").select("*").gte("started_at", s.toISOString()).lt("started_at", e.toISOString()).order("started_at");
+  const all = data || [], dur = (b) => (b.ended_at ? new Date(b.ended_at) : new Date()) - new Date(b.started_at), tm = (x) => new Date(x).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  const by = {}; all.forEach((b) => (by[b.profile_id] ||= []).push(b));
+  const tot = all.reduce((x, b) => x + dur(b), 0), now = all.filter((b) => !b.ended_at), K = (l, v, sub) => `<div class="card kpi" style="cursor:default"><div class="mut">${l}</div><b>${v}</b><div class="mut">${sub}</div></div>`;
+  const dname = (id) => { const p = dirP.find((x) => x.id === id); return p ? (deps.find((d) => d.id === p.department_id) || {}).name || "" : ""; };
+  show(`<h2>Pause</h2><div class="chips"><button class="${pp === "day" && !ppDay ? "on" : ""}" data-p="day">Oggi</button><button class="${pp === "week" ? "on" : ""}" data-p="week">Questa settimana</button><button class="${pp === "month" ? "on" : ""}" data-p="month">Ultimi 30 giorni</button></div>
+  <label>Un altro giorno<input id="pd" type="date" value="${iso(s)}"></label>
+  <div class="kpis" style="margin-top:12px">${K("Pause fatte", all.length, "nel periodo")}${K("Tempo totale", fmtDur(tot), "di pausa")}${K("Durata media", all.length ? fmtDur(tot / all.length) : "—", "per pausa")}${K("In pausa ora", now.length, esc(now.map((b) => whoName(b.profile_id)).join(", ")) || "nessuno")}</div>
+  <h3>Riepilogo per persona</h3><div class="tw"><table><tr><th>Persona</th><th>Pause</th><th>Totale</th><th>Media</th><th>Più lunga</th></tr>${Object.keys(by).sort((x, y) => by[y].reduce((q, b) => q + dur(b), 0) - by[x].reduce((q, b) => q + dur(b), 0)).map((id) => { const l = by[id], t = l.reduce((q, b) => q + dur(b), 0); return `<tr><td><b>${esc(whoName(id))}</b><div class="mut">${esc(dname(id))}</div></td><td>${l.length}</td><td>${fmtDur(t)}</td><td>${fmtDur(t / l.length)}</td><td>${fmtDur(Math.max(...l.map(dur)))}</td></tr>`; }).join("") || `<tr><td colspan="5" class="mut">Nessuna pausa nel periodo.</td></tr>`}</table></div>
+  ${pp === "day" ? `<h3>Dettaglio del giorno</h3>${Object.keys(by).map((id) => `<div class="card"><b>${esc(whoName(id))}</b>${by[id].map((b) => `<div class="row" style="justify-content:space-between"><span>${tm(b.started_at)} – ${b.ended_at ? tm(b.ended_at) : "in corso"}</span><b>${fmtDur(dur(b))}</b></div>`).join("")}</div>`).join("") || `<p class="mut">Nessuna pausa.</p>`}` : `<p class="mut">Scegli un giorno per vedere orari di inizio e fine.</p>`}`);
+  $("#main").querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => { pp = b.dataset.p; ppDay = ""; pausePage(); }));
+  $("#pd").onchange = () => { pp = "day"; ppDay = $("#pd").value; pausePage(); };
+}
+async function bagniPage() {
+  await loadDir();
+  const cs = deps.find((d) => d.name === "Casse"); if (!cs) return show(`<h2>Pulizia bagni</h2><p class="mut">Reparto Casse non trovato.</p>`);
+  const team = dirP.filter((p) => p.department_id === cs.id && p.role === "staff").sort((x, y) => x.last_name.localeCompare(y.last_name));
+  const a = mondayOf(bw), from = addDays(mondayOf(0), -21), to = addDays(mondayOf(1), 7);
+  const { data } = await sb.from("duties").select("profile_id,duty_date").eq("kind", "bagni").gte("duty_date", iso(from)).lt("duty_date", iso(to));
+  const rows = data || [], has = (pid, i) => rows.some((r) => r.profile_id === pid && r.duty_date === iso(addDays(a, i)));
+  const n4 = (pid) => rows.filter((r) => r.profile_id === pid && r.duty_date >= iso(from) && r.duty_date < iso(addDays(mondayOf(0), 7))).length;
+  const nw = (pid) => rows.filter((r) => r.profile_id === pid && r.duty_date >= iso(a) && r.duty_date < iso(addDays(a, 7))).length;
+  const order = [...team].sort((x, y) => n4(x.id) - n4(y.id) || x.last_name.localeCompare(y.last_name));
+  show(`<h2>Pulizia bagni</h2><div class="chips"><button class="${bw === -1 ? "on" : ""}" data-w="-1">Settimana scorsa</button><button class="${bw === 0 ? "on" : ""}" data-w="0">Questa settimana</button><button class="${bw === 1 ? "on" : ""}" data-w="1">Settimana prossima</button></div>
+  <p class="mut">${wkLabel(bw)} · il compito si segna nel turno, dalla tabella dei Turni.</p>
+  <div class="tw"><table><tr><th>Cassiere</th>${DN.map((d, i) => `<th>${d}<br><span class="mut">${addDays(a, i).getDate()}</span></th>`).join("")}<th>Settimana</th><th>4 settimane</th></tr>${team.map((p) => `<tr><td><b>${esc(p.first_name)} ${esc(p.last_name)}</b></td>${DN.map((_, i) => `<td>${has(p.id, i) ? `<span class="tag ok">Sì</span>` : ""}</td>`).join("")}<td><b>${nw(p.id)}</b></td><td>${n4(p.id)}</td></tr>`).join("") || `<tr><td colspan="10" class="mut">Nessun cassiere.</td></tr>`}</table></div>
+  <h3>Turnazione equa</h3><div class="card"><div class="mut">Ultime 4 settimane: chi ne ha fatte meno è il primo da assegnare.</div>${order.map((p, k) => `<div class="row" style="justify-content:space-between"><span>${k + 1}. ${esc(p.first_name)} ${esc(p.last_name)}</span><b>${n4(p.id)}</b></div>`).join("")}</div>`);
+  $("#main").querySelectorAll("[data-w]").forEach((b) => (b.onclick = () => { bw = +b.dataset.w; bagniPage(); }));
 }
 
 // ---- team, profili, codici
@@ -506,3 +528,4 @@ try { if (localStorage.getItem("side") === "0") document.body.classList.add("col
 const tick = () => { if (!me) return; const k = iso(mondayOf(0)); if (k !== curWeek) { curWeek = k; wk = 0; go(tab); } };
 setInterval(tick, 60000); document.addEventListener("visibilitychange", tick);
 boot();
+
